@@ -9,6 +9,7 @@
     "node": ">=20 <21"
   },
   "scripts": {
+    "seed:ifneeded": "node scripts/seed-if-needed.js",
     "build": "nest build",
     "start": "nest start",
     "start:dev": "nest start --watch",
