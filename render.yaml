@@ -6,7 +6,7 @@ services:
     region: oregon
     rootDir: admin-api
     buildCommand: npm install --include=dev && npm run prisma:generate && npm run build
-    startCommand: npx prisma db push && npm run seed:ifneeded && npm run start:prod
+    startCommand: npm run prisma:migrate:deploy && npm run seed:ifneeded && npm run start:prod
     autoDeploy: true
     envVars:
       - key: NODE_VERSION
