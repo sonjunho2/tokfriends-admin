@@ -15,8 +15,8 @@ import { JwtAuthGuard } from './jwt-auth.guard';
 import { LoginDto } from './dto/login.dto';
 
 @ApiTags('Auth')
-// 기존 로그에서 /api/admin/auth로 매핑되었으니 그대로 사용
-@Controller('api/admin/auth')
+// 전역 프리픽스(/api/admin)가 이미 설정되어 있으므로 여기서는 'auth'만!
+@Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
@@ -26,9 +26,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Admin login' })
   @ApiBody({
     type: LoginDto,
-    schema: {
-      example: { email: 'admin@local', password: 'Admin123!' },
-    },
+    schema: { example: { email: 'admin@local', password: 'Admin123!' } },
   })
   async login(@Request() req) {
     return this.authService.login(req.user);
