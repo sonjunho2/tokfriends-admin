@@ -3,8 +3,10 @@ services:
     name: tokfriends-admin-api
     env: node
     plan: free
-    buildCommand: cd admin-api && npm ci && npm run prisma:generate && npm run build
-    startCommand: cd admin-api && npm run prisma:migrate:deploy && npm run start:prod
+    rootDir: admin-api
+    buildCommand: npm install --include=dev && npm run prisma:generate && npm run build
+    startCommand: npm run prisma:migrate:deploy && npm run start:prod
+    autoDeploy: true
     envVars:
       - key: NODE_VERSION
         value: 20
