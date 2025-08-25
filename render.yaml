@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: tokfriends-admin-api
+    env: node
+    plan: free
+    buildCommand: cd admin-api && npm ci && npm run prisma:generate && npm run build
+    startCommand: cd admin-api && npm run prisma:migrate:deploy && npm run start:prod
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 8080
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: CORS_ORIGIN
+        value: https://tokfriends-admin-web.onrender.com
+
+  - type: web
+    name: tokfriends-admin-web
+    env: node
+    plan: free
+    buildCommand: cd admin-web && npm ci && npm run build
+    startCommand: cd admin-web && npm run start
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: NEXT_PUBLIC_API_BASE_URL
+        value: https://tokfriends-admin-api.onrender.com/api/admin
