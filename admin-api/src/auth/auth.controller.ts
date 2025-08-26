@@ -1,33 +1,18 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Post,
-  Request,
-  UseGuards,
-  HttpCode,
-  HttpStatus,
-} from '@nestjs/common';
-import { ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Controller, Post, UseGuards, Request, Get, Body } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LocalAuthGuard } from './local-auth.guard';
 import { JwtAuthGuard } from './jwt-auth.guard';
-import { LoginDto } from './dto/login.dto';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 
 @ApiTags('Auth')
-// 전역 프리픽스(/api/admin)가 이미 설정되어 있으므로 여기서는 'auth'만!
+@ApiBearerAuth() // 🔒 Swagger가 Bearer 토큰을 이 컨트롤러 엔드포인트에 붙이도록
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(private authService: AuthService) {}
 
   @Post('login')
   @UseGuards(LocalAuthGuard)
-  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Admin login' })
-  @ApiBody({
-    type: LoginDto,
-    schema: { example: { email: 'admin@local', password: 'Admin123!' } },
-  })
   async login(@Request() req) {
     return this.authService.login(req.user);
   }
@@ -42,12 +27,9 @@ export class AuthController {
   @Post('change-password')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Change password' })
-  async changePassword(
-    @Request() req,
-    @Body() body: { oldPassword: string; newPassword: string },
-  ) {
+  async changePassword(@Request() req, @Body() body: any) {
     return this.authService.changePassword(
-      req.user.userId,
+      req.user.userId ?? req.user.id,
       body.oldPassword,
       body.newPassword,
     );
