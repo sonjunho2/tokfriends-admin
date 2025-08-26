@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/use-toast'
-import { api } from '@/lib/api'
+import { api } from '@/lib/api' // ⚠️ axios 인스턴스(아래 체크리스트 참고)
 
 const loginSchema = z.object({
   email: z.string().email('올바른 이메일을 입력하세요'),
@@ -30,28 +30,46 @@ export default function LoginPage() {
     formState: { errors },
   } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
+    defaultValues: {
+      email: 'admin@example.com',    // 권장 관리자 계정
+      password: 'Admin123!',         // 초기 비번
+    },
   })
 
   const onSubmit = async (data: LoginForm) => {
     setIsLoading(true)
     try {
-      const response = await api.post('/auth/login', data)
-      localStorage.setItem('access_token', response.data.access_token)
-      localStorage.setItem('refresh_token', response.data.refresh_token)
-      localStorage.setItem('user', JSON.stringify(response.data.user))
-      
-      if (data.email === 'admin@local' && data.password === 'Admin123!') {
+      // ✅ 백엔드 실제 경로에 맞춤: /auth/login/email
+      const res = await api.post('/auth/login/email', data, { withCredentials: true })
+
+      // 백엔드 응답 형태 대응 (token 또는 access_token)
+      const token: string | undefined = res?.data?.token ?? res?.data?.access_token
+      const user = res?.data?.user ?? null
+
+      if (token) {
+        localStorage.setItem('tokfriends_admin_token', token)
+      }
+      if (user) {
+        localStorage.setItem('user', JSON.stringify(user))
+      }
+
+      // 초기 계정이면 비번 변경 유도 토스트
+      if ((data.email === 'admin@local' || data.email === 'admin@example.com') && data.password === 'Admin123!') {
         toast({
-          title: '비밀번호 변경 필요',
-          description: '보안을 위해 비밀번호를 변경해주세요.',
+          title: '비밀번호 변경 권장',
+          description: '보안을 위해 관리자 비밀번호를 변경하세요.',
         })
       }
-      
+
       router.push('/dashboard')
-    } catch (error) {
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message ||
+        err?.message ||
+        '이메일 또는 비밀번호를 확인하세요.'
       toast({
         title: '로그인 실패',
-        description: '이메일 또는 비밀번호를 확인하세요.',
+        description: Array.isArray(msg) ? msg.join(', ') : String(msg),
         variant: 'destructive',
       })
     } finally {
@@ -73,7 +91,8 @@ export default function LoginPage() {
               <Input
                 id="email"
                 type="email"
-                placeholder="admin@local"
+                placeholder="admin@example.com"
+                autoComplete="username"
                 {...register('email')}
               />
               {errors.email && (
@@ -85,6 +104,7 @@ export default function LoginPage() {
               <Input
                 id="password"
                 type="password"
+                autoComplete="current-password"
                 {...register('password')}
               />
               {errors.password && (
