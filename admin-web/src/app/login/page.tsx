@@ -1,3 +1,4 @@
+//admin-web/src/app/login/page.tsx
 'use client'
 
 import { useState } from 'react'
@@ -10,7 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/use-toast'
-import { api } from '@/lib/api' // ⚠️ axios 인스턴스(아래 체크리스트 참고)
+import { api, saveLoginResult } from '@/lib/api'
 
 const loginSchema = z.object({
   email: z.string().email('올바른 이메일을 입력하세요'),
@@ -31,42 +32,42 @@ export default function LoginPage() {
   } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: 'admin@example.com',    // 권장 관리자 계정
-      password: 'Admin123!',         // 초기 비번
+      email: 'admin@local',        // 백엔드 seed 파일과 일치
+      password: 'Admin123!',       // 백엔드 seed 파일과 일치
     },
   })
 
   const onSubmit = async (data: LoginForm) => {
     setIsLoading(true)
     try {
-      // ✅ 백엔드 실제 경로에 맞춤: /auth/login/email
-      const res = await api.post('/auth/login/email', data, { withCredentials: true })
+      // 백엔드 실제 경로에 맞춤: /auth/login/email
+      const res = await api.post('/auth/login/email', data)
 
-      // 백엔드 응답 형태 대응 (token 또는 access_token)
-      const token: string | undefined = res?.data?.token ?? res?.data?.access_token
-      const user = res?.data?.user ?? null
-
-      if (token) {
-        localStorage.setItem('tokfriends_admin_token', token)
-      }
-      if (user) {
-        localStorage.setItem('user', JSON.stringify(user))
+      // 백엔드 응답 형태 대응 (token 키 사용)
+      const result = {
+        token: res?.data?.token,
+        user: res?.data?.user,
       }
 
-      // 초기 계정이면 비번 변경 유도 토스트
-      if ((data.email === 'admin@local' || data.email === 'admin@example.com') && data.password === 'Admin123!') {
+      if (result.token) {
+        // api.ts의 saveLoginResult 함수 사용
+        saveLoginResult(result)
+        
         toast({
-          title: '비밀번호 변경 권장',
-          description: '보안을 위해 관리자 비밀번호를 변경하세요.',
+          title: '로그인 성공',
+          description: '관리자 대시보드로 이동합니다.',
         })
-      }
 
-      router.push('/dashboard')
+        router.push('/dashboard')
+      } else {
+        throw new Error('로그인 응답에 토큰이 없습니다.')
+      }
     } catch (err: any) {
-      const msg =
+      const msg = 
         err?.response?.data?.message ||
         err?.message ||
         '이메일 또는 비밀번호를 확인하세요.'
+        
       toast({
         title: '로그인 실패',
         description: Array.isArray(msg) ? msg.join(', ') : String(msg),
@@ -78,10 +79,10 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center">
+    <div className="flex min-h-screen items-center justify-center bg-gray-50">
       <Card className="w-[400px]">
         <CardHeader>
-          <CardTitle>딱친 관리자 로그인</CardTitle>
+          <CardTitle>등친 관리자 로그인</CardTitle>
           <CardDescription>관리자 계정으로 로그인하세요</CardDescription>
         </CardHeader>
         <CardContent>
@@ -91,7 +92,7 @@ export default function LoginPage() {
               <Input
                 id="email"
                 type="email"
-                placeholder="admin@example.com"
+                placeholder="admin@local"
                 autoComplete="username"
                 {...register('email')}
               />
@@ -115,6 +116,12 @@ export default function LoginPage() {
               {isLoading ? '로그인 중...' : '로그인'}
             </Button>
           </form>
+          
+          <div className="mt-4 p-3 bg-blue-50 rounded-md">
+            <p className="text-xs text-blue-600">
+              기본 관리자 계정: admin@local / Admin123!
+            </p>
+          </div>
         </CardContent>
       </Card>
     </div>
