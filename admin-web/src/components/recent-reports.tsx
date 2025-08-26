@@ -24,7 +24,7 @@ type Props = {
   limit?: number;
 };
 
-export default function RecentReports({ className, endpoint, limit = 20 }: Props) {
+function RecentReports({ className, endpoint, limit = 20 }: Props) {
   const [rows, setRows] = React.useState<Report[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -121,3 +121,7 @@ export default function RecentReports({ className, endpoint, limit = 20 }: Props
     </div>
   );
 }
+
+export default RecentReports;
+// ✅ 대시보드에서 named import를 그대로 쓰도록 지원
+export { RecentReports };
