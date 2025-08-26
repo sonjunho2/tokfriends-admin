@@ -1,4 +1,12 @@
-// 간단한 className 유틸 (외부 라이브러리 없이 동작)
-export function cn(...classes: Array<string | false | null | undefined>) {
-  return classes.filter(Boolean).join(" ");
+// admin-web/src/lib/utils.ts
+import { type ClassValue } from "clsx";
+import clsx from "clsx";
+import { twMerge } from "tailwind-merge";
+
+/**
+ * Tailwind 클래스 병합 유틸
+ * 사용: className={cn("p-2", cond && "opacity-50")}
+ */
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
 }
