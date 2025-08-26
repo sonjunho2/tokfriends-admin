@@ -1,59 +1,123 @@
+// admin-web/src/components/recent-reports.tsx
 "use client";
 
 import * as React from "react";
-import { api } from "@/lib/api"; // 프로젝트에 이미 있는 axios 인스턴스를 사용한다고 가정
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 
 type Report = {
-  id: string;
+  id: string | number;
+  userId?: string;
+  nickname?: string;
   reason?: string;
-  status: string;
-  createdAt?: string;
+  status?: "PENDING" | "RESOLVED" | "REJECTED";
+  createdAt?: string; // ISO string
 };
 
-export function RecentReports() {
-  const [reports, setReports] = React.useState<Report[]>([]);
+type Props = {
+  className?: string;
+  /**
+   * 백엔드 API 엔드포인트 (없으면 환경변수 or 더미 데이터 사용)
+   * 예: `${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/reports/recent?limit=20`
+   */
+  endpoint?: string;
+  limit?: number;
+};
+
+export default function RecentReports({ className, endpoint, limit = 20 }: Props) {
+  const [rows, setRows] = React.useState<Report[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const res = await api.get("/reports", {
-          params: { limit: 5, status: "PENDING" },
-        });
-        const items: Report[] = Array.isArray(res.data)
-          ? res.data
-          : res.data?.items ?? [];
-        if (alive) setReports(items);
-      } catch (e) {
-        if (alive) setReports([]);
-      } finally {
-        if (alive) setLoading(false);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, []);
+    let cancelled = false;
 
-  if (loading) return <div>Loading…</div>;
-  if (!reports.length) return <div className="text-sm text-gray-500">No recent reports</div>;
+    async function run() {
+      setLoading(true);
+      setError(null);
+      try {
+        const base = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/+$/, "");
+        const url = endpoint ?? (base ? `${base}/admin/reports/recent?limit=${limit}` : "");
+        if (!url) {
+          // 더미 데이터 (빌드용 안전장치)
+          const demo: Report[] = [
+            { id: "1", nickname: "tester1", reason: "스팸 의심", status: "PENDING", createdAt: new Date().toISOString() },
+            { id: "2", nickname: "tester2", reason: "부적절한 닉네임", status: "RESOLVED", createdAt: new Date().toISOString() },
+          ];
+          if (!cancelled) setRows(demo);
+          return;
+        }
+        const res = await fetch(url, { credentials: "include" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as Report[] | { items: Report[] };
+        const items = Array.isArray(data) ? data : data.items ?? [];
+        if (!cancelled) setRows(items.slice(0, limit));
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message ?? "unknown error");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    run();
+    return () => { cancelled = true; };
+  }, [endpoint, limit]);
 
   return (
-    <ul className="space-y-2">
-      {reports.map((r) => (
-        <li key={r.id} className="text-sm flex items-center gap-2">
-          <span className="inline-flex min-w-[84px] justify-center rounded-full border px-2 py-0.5 text-xs">
-            {r.status}
-          </span>
-          <span className="truncate">{r.reason ?? r.id}</span>
-          {r.createdAt && (
-            <span className="ml-auto text-xs text-gray-500">
-              {new Date(r.createdAt).toLocaleString()}
-            </span>
-          )}
-        </li>
-      ))}
-    </ul>
+    <div className={cn("w-full", className)}>
+      <div className="mb-2 flex items-center justify-between">
+        <h2 className="text-base font-semibold">최근 신고 내역</h2>
+        {loading && <span className="text-xs text-muted-foreground">불러오는 중…</span>}
+      </div>
+
+      {error ? (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">
+          최근 신고를 불러오지 못했어. <span className="font-mono">({error})</span>
+        </div>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>ID</TableHead>
+              <TableHead>닉네임</TableHead>
+              <TableHead>사유</TableHead>
+              <TableHead>상태</TableHead>
+              <TableHead>신고일</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.length === 0 && !loading ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center text-muted-foreground">
+                  데이터가 없어.
+                </TableCell>
+              </TableRow>
+            ) : (
+              rows.map((r) => (
+                <TableRow key={r.id}>
+                  <TableCell>{r.id}</TableCell>
+                  <TableCell>{r.nickname ?? r.userId ?? "-"}</TableCell>
+                  <TableCell className="max-w-[360px] truncate">{r.reason ?? "-"}</TableCell>
+                  <TableCell>
+                    <span
+                      className={cn(
+                        "inline-flex rounded px-2 py-0.5 text-xs",
+                        r.status === "RESOLVED" && "bg-emerald-500/10 text-emerald-700",
+                        r.status === "PENDING" && "bg-amber-500/10 text-amber-700",
+                        r.status === "REJECTED" && "bg-rose-500/10 text-rose-700"
+                      )}
+                    >
+                      {r.status ?? "-"}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    {r.createdAt ? new Date(r.createdAt).toLocaleString() : "-"}
+                  </TableCell>
+                </TableRow>
+            )))}
+          </TableBody>
+        </Table>
+      )}
+    </div>
   );
 }
