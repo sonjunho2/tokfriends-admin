@@ -15,7 +15,7 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [health, setHealth] = useState<'ok' | 'bad' | 'idle'>('idle')
 
-  // 선택: 첫 진입 시 백엔드 헬스체크
+  // 진입 시 백엔드 헬스체크(가시화)
   useEffect(() => {
     let mounted = true
     ;(async () => {
@@ -56,45 +56,37 @@ export default function LoginPage() {
     setIsLoading(true)
 
     try {
-      // 1차: /auth/login/email
+      // 1차 시도: /auth/login/email
       let res = await api.post('/auth/login/email', data)
       let result = res?.data
 
-      // 서버가 다른 엔드포인트를 쓸 수 있으니 2차 시도
+      // 토큰 미포함/실패 시 2차 시도: /auth/login
       if (!(result?.token || result?.access_token)) {
         try {
           res = await api.post('/auth/login', data)
           result = res?.data
         } catch (e) {
-          // 두 경로 모두 실패 → 아래 공통 에러 처리로
           throw e
         }
       }
 
       if (result?.token || result?.access_token) {
         saveLoginResult(result)
-        toast({
-          title: '로그인 성공',
-          description: '관리자 대시보드로 이동합니다.',
-        })
+        toast({ title: '로그인 성공', description: '관리자 대시보드로 이동합니다.' })
         router.push('/dashboard')
         return
       }
 
       throw new Error('서버 응답에 토큰이 없습니다.')
     } catch (err: any) {
-      // 에러 메시지 조합
       const serverMsg = err?.response?.data?.message
       const msg = Array.isArray(serverMsg)
         ? serverMsg.join(', ')
         : (serverMsg || err?.message || '로그인에 실패했습니다.')
 
-      toast({
-        title: '로그인 실패',
-        description: String(msg),
-        variant: 'destructive',
-      })
-      // 네트워크/도메인 오설정 진단 보조: 콘솔 로그
+      toast({ title: '로그인 실패', description: String(msg), variant: 'destructive' })
+
+      // 네트워크 진단 로그
       // eslint-disable-next-line no-console
       console.error('[Login Error]', {
         url: err?.config?.baseURL + err?.config?.url,
@@ -121,40 +113,19 @@ export default function LoginPage() {
           <form onSubmit={(e) => e.preventDefault()} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">이메일</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="admin@example.com"
-                autoComplete="username"
-                defaultValue="admin@example.com"
-                disabled={isLoading}
-              />
+              <Input id="email" type="email" placeholder="admin@example.com" autoComplete="username" defaultValue="admin@example.com" disabled={isLoading} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">비밀번호</Label>
-              <Input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                defaultValue="Admin123!"
-                disabled={isLoading}
-              />
+              <Input id="password" type="password" autoComplete="current-password" defaultValue="Admin123!" disabled={isLoading} />
             </div>
-
-            <Button
-              type="button"
-              onClick={handleLoginClick}
-              className="w-full"
-              disabled={isLoading}
-            >
+            <Button type="button" onClick={handleLoginClick} className="w-full" disabled={isLoading}>
               {isLoading ? '로그인 중...' : '로그인'}
             </Button>
           </form>
 
           <div className="mt-4 p-3 bg-blue-50 rounded-md">
-            <p className="text-xs text-blue-600">
-              기본 관리자 계정: admin@example.com / Admin123!
-            </p>
+            <p className="text-xs text-blue-600">기본 관리자 계정: admin@example.com / Admin123!</p>
           </div>
         </CardContent>
       </Card>
