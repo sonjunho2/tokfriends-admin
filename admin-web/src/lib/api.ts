@@ -2,10 +2,25 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
 
 /**
- * BASE URL 설정 - 하드코딩으로 수정
+ * BASE URL 구성
+ * - 1순위: NEXT_PUBLIC_API_BASE_URL (빌드 시 치환됨)
+ * - 2순위: 안전한 폴백(기존 하드코딩 값)
+ * - 트레일링 슬래시 제거
  */
-const RAW_BASE = 'https://tok-friends-api.onrender.com'
+const ENV_BASE = process.env.NEXT_PUBLIC_API_BASE_URL
+const FALLBACK_BASE = 'https://tok-friends-api.onrender.com'
+const RAW_BASE = (ENV_BASE && ENV_BASE.trim().length > 0 ? ENV_BASE : FALLBACK_BASE) as string
 const API_BASE_URL = RAW_BASE.replace(/\/+$/, '')
+
+/**
+ * 디버깅용 런타임 로그
+ * - 브라우저 콘솔에서 실제로 어떤 BASE URL로 호출되는지 확인 가능
+ * - Next.js는 빌드 시 문자열로 치환하므로 process 없이도 문자가 찍힙니다.
+ */
+if (typeof window !== 'undefined') {
+  // eslint-disable-next-line no-console
+  console.log('[TokFriends Admin] API_BASE_URL =', API_BASE_URL)
+}
 
 /**
  * axios 인스턴스
@@ -57,7 +72,7 @@ export function clearAuthStorage() {
 }
 
 /**
- * 요청 인터셉터
+ * 요청 인터셉터: Authorization 헤더 주입
  */
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = getAccessToken()
@@ -69,7 +84,7 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 })
 
 /**
- * 응답 인터셉터
+ * 응답 인터셉터: 401 시 갱신 플로우
  */
 api.interceptors.response.use(
   (response) => response,
@@ -105,6 +120,12 @@ api.interceptors.response.use(
         if (typeof window !== 'undefined') window.location.href = '/login'
         return Promise.reject(refreshError)
       }
+    }
+
+    // 디버깅용: 어떤 BASE URL에서 실패했는지 노출
+    if (typeof window !== 'undefined') {
+      // eslint-disable-next-line no-console
+      console.error('[TokFriends Admin] API error @', API_BASE_URL, error)
     }
 
     return Promise.reject(error)
@@ -145,7 +166,4 @@ export async function getDashboardMetrics() {
       reports: { total: 0, pending: 0 },
       bannedWords: 0,
       activeAnnouncements: 0,
-      newUsers: { day: 0, week: 0, month: 0 },
-    }
-  }
-}
+      newUsers: { day: 0, week:
