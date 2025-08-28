@@ -40,11 +40,11 @@ export default function LoginPage() {
     setIsLoading(true)
     
     try {
-      console.log('로그인 시도:', data.email) // 디버깅용
+      console.log('로그인 시도:', data.email)
       
       const res = await api.post('/auth/login/email', data)
       
-      console.log('서버 응답:', res.data) // 디버깅용
+      console.log('서버 응답:', res.data)
       
       const result = res.data
       
@@ -61,7 +61,7 @@ export default function LoginPage() {
         throw new Error('서버 응답에 토큰이 없습니다.')
       }
     } catch (err: any) {
-      console.error('로그인 에러:', err) // 디버깅용
+      console.error('로그인 에러:', err)
       
       let msg = '로그인에 실패했습니다.'
       
@@ -82,15 +82,20 @@ export default function LoginPage() {
     }
   }
 
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    handleSubmit(onSubmit)(e)
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50">
       <Card className="w-[400px]">
         <CardHeader>
-          <CardTitle>등친 관리자 로그인</CardTitle>
+          <CardTitle>딱친 관리자 로그인</CardTitle>
           <CardDescription>관리자 계정으로 로그인하세요</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={handleFormSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">이메일</Label>
               <Input
