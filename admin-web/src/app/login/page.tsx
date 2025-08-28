@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/use-toast'
-import { api, saveLoginResult } from '@/lib/api'
+import { postForm, postJson, saveLoginResult, api } from '@/lib/api'
 import type { AxiosError } from 'axios'
 
 export default function LoginPage() {
@@ -32,33 +32,16 @@ export default function LoginPage() {
     return () => { mounted = false }
   }, [])
 
-  async function tryLogin(endpoint: string, data: any, timeoutMs: number) {
-    // 개별 시도: 지정 타임아웃으로 빠르게 실패시켜 다음 경로로 넘어감
-    return api.post(endpoint, data, { timeout: timeoutMs })
-  }
-
-  function logAxiosWarn(prefix: string, err: unknown) {
+  // 에러 로깅 헬퍼(타입 안전)
+  function logAxios(prefix: string, err: unknown, level: 'warn' | 'error' = 'warn') {
     const ax = err as AxiosError | undefined
     const baseURL = ax?.config?.baseURL ?? ''
     const url = ax?.config?.url ?? ''
     const status = ax?.response?.status
     const data = ax?.response?.data
     const message = (ax?.message ?? (err as any)?.message ?? String(err)).toString()
-
     // eslint-disable-next-line no-console
-    console.warn(prefix, { url: `${baseURL}${url}`, status, data, message })
-  }
-
-  function logAxiosError(prefix: string, err: unknown) {
-    const ax = err as AxiosError | undefined
-    const baseURL = ax?.config?.baseURL ?? ''
-    const url = ax?.config?.url ?? ''
-    const status = ax?.response?.status
-    const data = ax?.response?.data
-    const message = (ax?.message ?? (err as any)?.message ?? String(err)).toString()
-
-    // eslint-disable-next-line no-console
-    console.error(prefix, { url: `${baseURL}${url}`, status, data, message })
+    console[level](prefix, { url: `${baseURL}${url}`, status, data, message })
   }
 
   const handleLoginClick = async () => {
@@ -71,11 +54,7 @@ export default function LoginPage() {
     }
 
     if (!data.email || !data.password) {
-      toast({
-        title: '입력 오류',
-        description: '이메일과 비밀번호를 입력해주세요.',
-        variant: 'destructive',
-      })
+      toast({ title: '입력 오류', description: '이메일과 비밀번호를 입력해주세요.', variant: 'destructive' })
       return
     }
 
@@ -85,23 +64,27 @@ export default function LoginPage() {
       let result: any | null = null
       let lastErr: unknown = null
 
-      // 1차: /auth/login/email (짧게 3초)
+      /**
+       * 프리플라이트 회피 전략:
+       * - 로그인 요청만 x-www-form-urlencoded 로 전송
+       * - 1차: /auth/login (5초)
+       * - 2차: /auth/login/email (3초)
+       */
       try {
-        const r1 = await tryLogin('/auth/login/email', data, 3000)
+        const r1 = await postForm('/auth/login', data, { timeout: 5000 })
         result = r1?.data
       } catch (e) {
         lastErr = e
-        logAxiosWarn('[login] /auth/login/email failed or timed out', e)
+        logAxios('[login] /auth/login failed or timed out', e, 'warn')
       }
 
-      // 2차: /auth/login (조금 넉넉히 5초)
       if (!(result?.token || result?.access_token)) {
         try {
-          const r2 = await tryLogin('/auth/login', data, 5000)
+          const r2 = await postForm('/auth/login/email', data, { timeout: 3000 })
           result = r2?.data
         } catch (e) {
           lastErr = e
-          logAxiosWarn('[login] /auth/login failed or timed out', e)
+          logAxios('[login] /auth/login/email failed or timed out', e, 'warn')
         }
       }
 
@@ -112,10 +95,9 @@ export default function LoginPage() {
         return
       }
 
-      // 둘 다 실패 시
       throw lastErr || new Error('로그인 실패')
     } catch (err) {
-      logAxiosError('[Login Error]', err)
+      logAxios('[Login Error]', err, 'error')
 
       const ax = err as AxiosError | undefined
       const serverMsg = (ax?.response?.data as any)?.message
@@ -134,7 +116,7 @@ export default function LoginPage() {
       <Card className="w-[400px]">
         <CardHeader>
           <CardTitle>딱친 관리자 로그인</CardTitle>
-        <CardDescription>
+          <CardDescription>
             관리자 계정으로 로그인하세요
             {health === 'ok' && <span className="ml-2 text-green-600 text-xs">(서버 연결 OK)</span>}
             {health === 'bad' && <span className="ml-2 text-red-600 text-xs">(서버 연결 불안정)</span>}
