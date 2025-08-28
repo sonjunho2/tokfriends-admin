@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/use-toast'
 import { api, saveLoginResult } from '@/lib/api'
+import type { AxiosError } from 'axios'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -36,6 +37,30 @@ export default function LoginPage() {
     return api.post(endpoint, data, { timeout: timeoutMs })
   }
 
+  function logAxiosWarn(prefix: string, err: unknown) {
+    const ax = err as AxiosError | undefined
+    const baseURL = ax?.config?.baseURL ?? ''
+    const url = ax?.config?.url ?? ''
+    const status = ax?.response?.status
+    const data = ax?.response?.data
+    const message = (ax?.message ?? (err as any)?.message ?? String(err)).toString()
+
+    // eslint-disable-next-line no-console
+    console.warn(prefix, { url: `${baseURL}${url}`, status, data, message })
+  }
+
+  function logAxiosError(prefix: string, err: unknown) {
+    const ax = err as AxiosError | undefined
+    const baseURL = ax?.config?.baseURL ?? ''
+    const url = ax?.config?.url ?? ''
+    const status = ax?.response?.status
+    const data = ax?.response?.data
+    const message = (ax?.message ?? (err as any)?.message ?? String(err)).toString()
+
+    // eslint-disable-next-line no-console
+    console.error(prefix, { url: `${baseURL}${url}`, status, data, message })
+  }
+
   const handleLoginClick = async () => {
     const emailInput = document.getElementById('email') as HTMLInputElement | null
     const passwordInput = document.getElementById('password') as HTMLInputElement | null
@@ -46,7 +71,11 @@ export default function LoginPage() {
     }
 
     if (!data.email || !data.password) {
-      toast({ title: '입력 오류', description: '이메일과 비밀번호를 입력해주세요.', variant: 'destructive' })
+      toast({
+        title: '입력 오류',
+        description: '이메일과 비밀번호를 입력해주세요.',
+        variant: 'destructive',
+      })
       return
     }
 
@@ -54,7 +83,7 @@ export default function LoginPage() {
 
     try {
       let result: any | null = null
-      let lastErr: any = null
+      let lastErr: unknown = null
 
       // 1차: /auth/login/email (짧게 3초)
       try {
@@ -62,13 +91,7 @@ export default function LoginPage() {
         result = r1?.data
       } catch (e) {
         lastErr = e
-        // eslint-disable-next-line no-console
-        console.warn('[login] /auth/login/email failed or timed out', {
-          url: e?.config?.baseURL + e?.config?.url,
-          status: e?.response?.status,
-          data: e?.response?.data,
-          message: e?.message,
-        })
+        logAxiosWarn('[login] /auth/login/email failed or timed out', e)
       }
 
       // 2차: /auth/login (조금 넉넉히 5초)
@@ -78,13 +101,7 @@ export default function LoginPage() {
           result = r2?.data
         } catch (e) {
           lastErr = e
-          // eslint-disable-next-line no-console
-          console.warn('[login] /auth/login failed or timed out', {
-            url: e?.config?.baseURL + e?.config?.url,
-            status: e?.response?.status,
-            data: e?.response?.data,
-            message: e?.message,
-          })
+          logAxiosWarn('[login] /auth/login failed or timed out', e)
         }
       }
 
@@ -95,19 +112,17 @@ export default function LoginPage() {
         return
       }
 
+      // 둘 다 실패 시
       throw lastErr || new Error('로그인 실패')
-    } catch (err: any) {
-      // 네트워크 진단 로그
-      // eslint-disable-next-line no-console
-      console.error('[Login Error]', {
-        url: err?.config?.baseURL + err?.config?.url,
-        status: err?.response?.status,
-        data: err?.response?.data,
-        message: err?.message,
-      })
+    } catch (err) {
+      logAxiosError('[Login Error]', err)
 
-      const serverMsg = err?.response?.data?.message
-      const msg = Array.isArray(serverMsg) ? serverMsg.join(', ') : (serverMsg || err?.message || '로그인에 실패했습니다.')
+      const ax = err as AxiosError | undefined
+      const serverMsg = (ax?.response?.data as any)?.message
+      const msg = Array.isArray(serverMsg)
+        ? serverMsg.join(', ')
+        : (serverMsg || ax?.message || '로그인에 실패했습니다.')
+
       toast({ title: '로그인 실패', description: String(msg), variant: 'destructive' })
     } finally {
       setIsLoading(false)
@@ -119,7 +134,7 @@ export default function LoginPage() {
       <Card className="w-[400px]">
         <CardHeader>
           <CardTitle>딱친 관리자 로그인</CardTitle>
-          <CardDescription>
+        <CardDescription>
             관리자 계정으로 로그인하세요
             {health === 'ok' && <span className="ml-2 text-green-600 text-xs">(서버 연결 OK)</span>}
             {health === 'bad' && <span className="ml-2 text-red-600 text-xs">(서버 연결 불안정)</span>}
