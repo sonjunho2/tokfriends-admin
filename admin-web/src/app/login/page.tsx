@@ -32,7 +32,7 @@ export default function LoginPage() {
   } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: 'admin@local',        // 백엔드 seed 파일과 일치
+      email: 'admin@example.com',        // 백엔드 seed 파일과 일치
       password: 'Admin123!',       // 백엔드 seed 파일과 일치
     },
   })
@@ -82,7 +82,7 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-gray-50">
       <Card className="w-[400px]">
         <CardHeader>
-          <CardTitle>등친 관리자 로그인</CardTitle>
+          <CardTitle>딱친 관리자 로그인</CardTitle>
           <CardDescription>관리자 계정으로 로그인하세요</CardDescription>
         </CardHeader>
         <CardContent>
@@ -92,7 +92,7 @@ export default function LoginPage() {
               <Input
                 id="email"
                 type="email"
-                placeholder="admin@local"
+                placeholder="admin@example.com"
                 autoComplete="username"
                 {...register('email')}
               />
@@ -119,7 +119,7 @@ export default function LoginPage() {
           
           <div className="mt-4 p-3 bg-blue-50 rounded-md">
             <p className="text-xs text-blue-600">
-              기본 관리자 계정: admin@local / Admin123!
+              기본 관리자 계정: admin@example.com / Admin123!
             </p>
           </div>
         </CardContent>
