@@ -3,8 +3,8 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
 
 /**
  * BASE URL 구성
- * - 1순위: NEXT_PUBLIC_API_BASE_URL (빌드 시 치환됨)
- * - 2순위: 안전한 폴백(기존 하드코딩 값)
+ * - 1순위: NEXT_PUBLIC_API_BASE_URL (빌드 시 치환)
+ * - 2순위: 기존 하드코딩 값(안전 폴백)
  * - 트레일링 슬래시 제거
  */
 const ENV_BASE = process.env.NEXT_PUBLIC_API_BASE_URL
@@ -12,39 +12,27 @@ const FALLBACK_BASE = 'https://tok-friends-api.onrender.com'
 const RAW_BASE = (ENV_BASE && ENV_BASE.trim().length > 0 ? ENV_BASE : FALLBACK_BASE) as string
 const API_BASE_URL = RAW_BASE.replace(/\/+$/, '')
 
-/**
- * 디버깅용 런타임 로그
- * - 브라우저 콘솔에서 실제로 어떤 BASE URL로 호출되는지 확인 가능
- * - Next.js는 빌드 시 문자열로 치환하므로 process 없이도 문자가 찍힙니다.
- */
+/** 디버깅용: 실제 BASE URL을 브라우저 콘솔에 표기 */
 if (typeof window !== 'undefined') {
   // eslint-disable-next-line no-console
   console.log('[TokFriends Admin] API_BASE_URL =', API_BASE_URL)
 }
 
-/**
- * axios 인스턴스
- */
+/** axios 인스턴스 */
 export const api = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true,
   headers: { 'Content-Type': 'application/json' },
 })
 
-/**
- * 토큰 도우미
- */
+/** 토큰 도우미 */
 const TOKEN_KEY = 'tokfriends_admin_token'
 const ACCESS_KEY = 'access_token'
 const REFRESH_KEY = 'refresh_token'
 
 export function getAccessToken(): string | null {
   if (typeof window === 'undefined') return null
-  return (
-    localStorage.getItem(TOKEN_KEY) ||
-    localStorage.getItem(ACCESS_KEY) ||
-    null
-  )
+  return localStorage.getItem(TOKEN_KEY) || localStorage.getItem(ACCESS_KEY) || null
 }
 
 export function setAccessToken(token: string) {
@@ -71,9 +59,7 @@ export function clearAuthStorage() {
   localStorage.removeItem('user')
 }
 
-/**
- * 요청 인터셉터: Authorization 헤더 주입
- */
+/** 요청 인터셉터: Authorization 주입 */
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = getAccessToken()
   if (token) {
@@ -83,9 +69,7 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   return config
 })
 
-/**
- * 응답 인터셉터: 401 시 갱신 플로우
- */
+/** 응답 인터셉터: 401 시 refresh 플로우 */
 api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError<any>) => {
@@ -94,7 +78,6 @@ api.interceptors.response.use(
 
     if (status === 401 && originalRequest && !originalRequest._retry) {
       originalRequest._retry = true
-
       try {
         const refreshToken = getRefreshToken()
         if (!refreshToken) {
@@ -122,7 +105,7 @@ api.interceptors.response.use(
       }
     }
 
-    // 디버깅용: 어떤 BASE URL에서 실패했는지 노출
+    // 디버깅: 어떤 BASE URL에서 실패했는지 출력
     if (typeof window !== 'undefined') {
       // eslint-disable-next-line no-console
       console.error('[TokFriends Admin] API error @', API_BASE_URL, error)
@@ -132,9 +115,7 @@ api.interceptors.response.use(
   }
 )
 
-/**
- * 로그인/로그아웃 헬퍼
- */
+/** 로그인/로그아웃 헬퍼 */
 export function saveLoginResult(payload: any) {
   const token = payload?.token || payload?.access_token
   const refresh = payload?.refresh_token
@@ -152,18 +133,20 @@ export function logoutToLogin() {
   if (typeof window !== 'undefined') window.location.href = '/login'
 }
 
-/**
- * API 헬퍼 함수들
- */
+/** 대시보드 메트릭스 헬퍼 */
 export async function getDashboardMetrics() {
   try {
     const response = await api.get('/metrics/dashboard')
     return response.data
   } catch (error) {
     console.error('Failed to fetch dashboard metrics:', error)
+    // 안전 폴백(문법 완결)
     return {
       users: { total: 0, active: 0, suspended: 0 },
       reports: { total: 0, pending: 0 },
       bannedWords: 0,
       activeAnnouncements: 0,
-      newUsers: { day: 0, week:
+      newUsers: { day: 0, week: 0, month: 0 },
+    }
+  }
+}
