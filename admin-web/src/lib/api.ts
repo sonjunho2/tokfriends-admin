@@ -1,27 +1,32 @@
 // admin-web/src/lib/api.ts
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
 
-// 1. 환경변수 → 2. 하드코딩 폴백
+/**
+ * BASE URL
+ * 1) NEXT_PUBLIC_API_BASE_URL 우선
+ * 2) 폴백: 기존 하드코딩
+ * 3) 트레일링 슬래시 제거
+ */
 const ENV_BASE = process.env.NEXT_PUBLIC_API_BASE_URL
 const FALLBACK_BASE = 'https://tok-friends-api.onrender.com'
 const RAW_BASE = (ENV_BASE && ENV_BASE.trim().length > 0 ? ENV_BASE : FALLBACK_BASE) as string
 const API_BASE_URL = RAW_BASE.replace(/\/+$/, '')
 
-// 디버깅용 콘솔 출력
+/** 디버깅: 실제 호출되는 BASE URL 표시 */
 if (typeof window !== 'undefined') {
+  // eslint-disable-next-line no-console
   console.log('[TokFriends Admin] API_BASE_URL =', API_BASE_URL)
 }
 
+/** axios 인스턴스 (기본 타임아웃 추가) */
 export const api = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true,
   headers: { 'Content-Type': 'application/json' },
+  timeout: 8000, // ← 지연으로 무한 대기 방지
 })
 
-// 이하 토큰 유틸/인터셉터/헬퍼 함수는 그대로 유지...
-
-
-/** 토큰 도우미 */
+/** 토큰 유틸 */
 const TOKEN_KEY = 'tokfriends_admin_token'
 const ACCESS_KEY = 'access_token'
 const REFRESH_KEY = 'refresh_token'
@@ -65,7 +70,7 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   return config
 })
 
-/** 응답 인터셉터: 401 시 refresh 플로우 */
+/** 응답 인터셉터: 401 → refresh 재발급 */
 api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError<any>) => {
@@ -90,9 +95,7 @@ api.interceptors.response.use(
         if (newRefresh) setRefreshToken(newRefresh)
 
         originalRequest.headers = originalRequest.headers || {}
-        if (newAccess) {
-          originalRequest.headers['Authorization'] = `Bearer ${newAccess}`
-        }
+        if (newAccess) originalRequest.headers['Authorization'] = `Bearer ${newAccess}`
         return api(originalRequest)
       } catch (refreshError) {
         clearAuthStorage()
@@ -101,12 +104,11 @@ api.interceptors.response.use(
       }
     }
 
-    // 디버깅: 어떤 BASE URL에서 실패했는지 출력
+    // 진단 로그
     if (typeof window !== 'undefined') {
       // eslint-disable-next-line no-console
       console.error('[TokFriends Admin] API error @', API_BASE_URL, error)
     }
-
     return Promise.reject(error)
   }
 )
@@ -129,14 +131,13 @@ export function logoutToLogin() {
   if (typeof window !== 'undefined') window.location.href = '/login'
 }
 
-/** 대시보드 메트릭스 헬퍼 */
+/** 대시보드 안전 폴백 */
 export async function getDashboardMetrics() {
   try {
     const response = await api.get('/metrics/dashboard')
     return response.data
   } catch (error) {
     console.error('Failed to fetch dashboard metrics:', error)
-    // 안전 폴백(문법 완결)
     return {
       users: { total: 0, active: 0, suspended: 0 },
       reports: { total: 0, pending: 0 },
