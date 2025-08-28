@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,27 +13,6 @@ export default function LoginPage() {
   const router = useRouter()
   const { toast } = useToast()
   const [isLoading, setIsLoading] = useState(false)
-  const [health, setHealth] = useState<'ok' | 'bad' | 'idle'>('idle')
-
-  // 진입 시 백엔드 헬스체크(가시화)
-  useEffect(() => {
-    let mounted = true
-    ;(async () => {
-      try {
-        const res = await api.get('/health', { timeout: 5000 })
-        if (!mounted) return
-        if (res?.data && (res.data.ok === true || res.status === 200)) {
-          setHealth('ok')
-        } else {
-          setHealth('bad')
-        }
-      } catch {
-        if (!mounted) return
-        setHealth('bad')
-      }
-    })()
-    return () => { mounted = false }
-  }, [])
 
   const handleLoginClick = async () => {
     const emailInput = document.getElementById('email') as HTMLInputElement | null
@@ -45,28 +24,31 @@ export default function LoginPage() {
     }
 
     if (!data.email || !data.password) {
-      toast({
-        title: '입력 오류',
-        description: '이메일과 비밀번호를 입력해주세요.',
-        variant: 'destructive',
-      })
+      toast({ title: '입력 오류', description: '이메일과 비밀번호를 입력해주세요.', variant: 'destructive' })
       return
     }
 
     setIsLoading(true)
 
     try {
-      // 1차 시도: /auth/login/email
-      let res = await api.post('/auth/login/email', data)
-      let result = res?.data
+      let result: any = null
+      let lastError: any = null
 
-      // 토큰 미포함/실패 시 2차 시도: /auth/login
-      if (!(result?.token || result?.access_token)) {
+      // 1차: /auth/login/email
+      try {
+        const res = await api.post('/auth/login/email', data)
+        result = res.data
+      } catch (e) {
+        lastError = e
+      }
+
+      // 2차: /auth/login
+      if (!result?.token && !result?.access_token) {
         try {
-          res = await api.post('/auth/login', data)
-          result = res?.data
+          const res = await api.post('/auth/login', data)
+          result = res.data
         } catch (e) {
-          throw e
+          lastError = e
         }
       }
 
@@ -77,22 +59,24 @@ export default function LoginPage() {
         return
       }
 
-      throw new Error('서버 응답에 토큰이 없습니다.')
+      // 둘 다 실패 시
+      throw lastError || new Error('로그인 실패')
     } catch (err: any) {
-      const serverMsg = err?.response?.data?.message
-      const msg = Array.isArray(serverMsg)
-        ? serverMsg.join(', ')
-        : (serverMsg || err?.message || '로그인에 실패했습니다.')
-
-      toast({ title: '로그인 실패', description: String(msg), variant: 'destructive' })
-
-      // 네트워크 진단 로그
-      // eslint-disable-next-line no-console
-      console.error('[Login Error]', {
+      console.error('로그인 에러:', {
         url: err?.config?.baseURL + err?.config?.url,
         status: err?.response?.status,
         data: err?.response?.data,
       })
+
+      let msg = '로그인에 실패했습니다.'
+      if (err?.response?.data?.message) {
+        const serverMsg = err.response.data.message
+        msg = Array.isArray(serverMsg) ? serverMsg.join(', ') : String(serverMsg)
+      } else if (err?.message) {
+        msg = err.message
+      }
+
+      toast({ title: '로그인 실패', description: msg, variant: 'destructive' })
     } finally {
       setIsLoading(false)
     }
@@ -103,30 +87,22 @@ export default function LoginPage() {
       <Card className="w-[400px]">
         <CardHeader>
           <CardTitle>딱친 관리자 로그인</CardTitle>
-          <CardDescription>
-            관리자 계정으로 로그인하세요
-            {health === 'ok' && <span className="ml-2 text-green-600 text-xs">(서버 연결 OK)</span>}
-            {health === 'bad' && <span className="ml-2 text-red-600 text-xs">(서버 연결 불안정)</span>}
-          </CardDescription>
+          <CardDescription>관리자 계정으로 로그인하세요</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={(e) => e.preventDefault()} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">이메일</Label>
-              <Input id="email" type="email" placeholder="admin@example.com" autoComplete="username" defaultValue="admin@example.com" disabled={isLoading} />
+              <Input id="email" type="email" placeholder="admin@example.com" autoComplete="username" disabled={isLoading} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">비밀번호</Label>
-              <Input id="password" type="password" autoComplete="current-password" defaultValue="Admin123!" disabled={isLoading} />
+              <Input id="password" type="password" autoComplete="current-password" disabled={isLoading} />
             </div>
             <Button type="button" onClick={handleLoginClick} className="w-full" disabled={isLoading}>
               {isLoading ? '로그인 중...' : '로그인'}
             </Button>
           </form>
-
-          <div className="mt-4 p-3 bg-blue-50 rounded-md">
-            <p className="text-xs text-blue-600">기본 관리자 계정: admin@example.com / Admin123!</p>
-          </div>
         </CardContent>
       </Card>
     </div>
