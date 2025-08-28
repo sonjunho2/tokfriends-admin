@@ -1,5 +1,5 @@
 // admin-web/src/lib/api.ts
-import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
+import axios, { AxiosError, InternalAxiosRequestConfig, AxiosRequestConfig } from 'axios'
 
 /**
  * BASE URL
@@ -18,12 +18,15 @@ if (typeof window !== 'undefined') {
   console.log('[TokFriends Admin] API_BASE_URL =', API_BASE_URL)
 }
 
-/** axios 인스턴스 (기본 타임아웃 추가) */
+/**
+ * axios 인스턴스
+ * - 전역 'Content-Type' 헤더 설정을 제거(요청별로 지정)
+ * - 기본 타임아웃 추가
+ */
 export const api = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true,
-  headers: { 'Content-Type': 'application/json' },
-  timeout: 8000, // ← 지연으로 무한 대기 방지
+  timeout: 8000,
 })
 
 /** 토큰 유틸 */
@@ -87,7 +90,9 @@ api.interceptors.response.use(
           return Promise.reject(error)
         }
 
-        const res = await api.post('/auth/refresh', { refresh_token: refreshToken })
+        const res = await api.post('/auth/refresh', { refresh_token: refreshToken }, {
+          headers: { 'Content-Type': 'application/json' }, // 이 요청은 JSON 유지
+        })
         const newAccess = res?.data?.access_token || res?.data?.token
         const newRefresh = res?.data?.refresh_token
 
@@ -104,7 +109,6 @@ api.interceptors.response.use(
       }
     }
 
-    // 진단 로그
     if (typeof window !== 'undefined') {
       // eslint-disable-next-line no-console
       console.error('[TokFriends Admin] API error @', API_BASE_URL, error)
@@ -112,6 +116,24 @@ api.interceptors.response.use(
     return Promise.reject(error)
   }
 )
+
+/** 공통 POST 헬퍼: JSON */
+export function postJson<T = any>(url: string, data?: any, config?: AxiosRequestConfig<T>) {
+  return api.post<T>(url, data, {
+    headers: { 'Content-Type': 'application/json' },
+    ...(config || {}),
+  })
+}
+
+/** 공통 POST 헬퍼: x-www-form-urlencoded (프리플라이트 회피) */
+export function postForm<T = any>(url: string, data?: Record<string, any>, config?: AxiosRequestConfig<T>) {
+  const body = new URLSearchParams()
+  Object.entries(data || {}).forEach(([k, v]) => body.append(k, String(v ?? '')))
+  return api.post<T>(url, body, {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    ...(config || {}),
+  })
+}
 
 /** 로그인/로그아웃 헬퍼 */
 export function saveLoginResult(payload: any) {
