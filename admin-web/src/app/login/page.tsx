@@ -1,4 +1,3 @@
-//admin-web/src/app/login/page.tsx
 'use client'
 
 import { useState } from 'react'
@@ -32,45 +31,50 @@ export default function LoginPage() {
   } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: 'admin@example.com',        // 백엔드 seed 파일과 일치
-      password: 'Admin123!',       // 백엔드 seed 파일과 일치
+      email: 'admin@example.com',
+      password: 'Admin123!',
     },
   })
 
   const onSubmit = async (data: LoginForm) => {
     setIsLoading(true)
+    
     try {
-      // 백엔드 실제 경로에 맞춤: /auth/login/email
+      console.log('로그인 시도:', data.email) // 디버깅용
+      
       const res = await api.post('/auth/login/email', data)
-
-      // 백엔드 응답 형태 대응 (token 키 사용)
-      const result = {
-        token: res?.data?.token,
-        user: res?.data?.user,
-      }
-
-      if (result.token) {
-        // api.ts의 saveLoginResult 함수 사용
+      
+      console.log('서버 응답:', res.data) // 디버깅용
+      
+      const result = res.data
+      
+      if (result.token || result.access_token) {
         saveLoginResult(result)
         
         toast({
           title: '로그인 성공',
           description: '관리자 대시보드로 이동합니다.',
         })
-
+        
         router.push('/dashboard')
       } else {
-        throw new Error('로그인 응답에 토큰이 없습니다.')
+        throw new Error('서버 응답에 토큰이 없습니다.')
       }
     } catch (err: any) {
-      const msg = 
-        err?.response?.data?.message ||
-        err?.message ||
-        '이메일 또는 비밀번호를 확인하세요.'
-        
+      console.error('로그인 에러:', err) // 디버깅용
+      
+      let msg = '로그인에 실패했습니다.'
+      
+      if (err?.response?.data?.message) {
+        const serverMsg = err.response.data.message
+        msg = Array.isArray(serverMsg) ? serverMsg.join(', ') : String(serverMsg)
+      } else if (err?.message) {
+        msg = err.message
+      }
+      
       toast({
         title: '로그인 실패',
-        description: Array.isArray(msg) ? msg.join(', ') : String(msg),
+        description: msg,
         variant: 'destructive',
       })
     } finally {
@@ -82,7 +86,7 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-gray-50">
       <Card className="w-[400px]">
         <CardHeader>
-          <CardTitle>딱친 관리자 로그인</CardTitle>
+          <CardTitle>등친 관리자 로그인</CardTitle>
           <CardDescription>관리자 계정으로 로그인하세요</CardDescription>
         </CardHeader>
         <CardContent>
@@ -95,6 +99,7 @@ export default function LoginPage() {
                 placeholder="admin@example.com"
                 autoComplete="username"
                 {...register('email')}
+                disabled={isLoading}
               />
               {errors.email && (
                 <p className="text-sm text-destructive">{errors.email.message}</p>
@@ -107,6 +112,7 @@ export default function LoginPage() {
                 type="password"
                 autoComplete="current-password"
                 {...register('password')}
+                disabled={isLoading}
               />
               {errors.password && (
                 <p className="text-sm text-destructive">{errors.password.message}</p>
