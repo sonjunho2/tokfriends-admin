@@ -1,18 +1,14 @@
+// admin-web/src/lib/api.ts
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
 
 /**
- * BASE URL 설정
- * - Vercel 환경변수에서 가져오고, 없으면 로컬 API 루트로 fallback
- * - 끝 슬래시는 제거해 경로 중복 방지
- *   예) https://api.com/ + /auth/login/email  => OK
+ * BASE URL 설정 - 하드코딩으로 수정
  */
-const RAW_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:10000'
+const RAW_BASE = 'https://tok-friends-api.onrender.com'
 const API_BASE_URL = RAW_BASE.replace(/\/+$/, '')
 
 /**
  * axios 인스턴스
- * - withCredentials: true  (쿠키 기반 인증 겸용)
- * - Content-Type: application/json
  */
 export const api = axios.create({
   baseURL: API_BASE_URL,
@@ -22,8 +18,6 @@ export const api = axios.create({
 
 /**
  * 토큰 도우미
- * - 기존 프로젝트의 access_token/refresh_token 키와
- *   새로 제안한 tokfriends_admin_token 모두를 지원
  */
 const TOKEN_KEY = 'tokfriends_admin_token'
 const ACCESS_KEY = 'access_token'
@@ -64,7 +58,6 @@ export function clearAuthStorage() {
 
 /**
  * 요청 인터셉터
- * - Authorization: Bearer <token> 자동 첨부
  */
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = getAccessToken()
@@ -77,9 +70,6 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 
 /**
  * 응답 인터셉터
- * - 401 발생 시 1회 자동 재시도
- * - refresh_token 이 있으면 /auth/refresh 호출을 시도
- *   (백엔드가 이 엔드포인트/포맷을 제공하지 않으면 로그인 페이지로 보내기)
  */
 api.interceptors.response.use(
   (response) => response,
@@ -87,37 +77,30 @@ api.interceptors.response.use(
     const originalRequest: any = error.config
     const status = error.response?.status
 
-    // 토큰 만료 등으로 401이면서, 아직 재시도 안 했을 때
     if (status === 401 && originalRequest && !originalRequest._retry) {
       originalRequest._retry = true
 
       try {
         const refreshToken = getRefreshToken()
         if (!refreshToken) {
-          // 리프레시 토큰 없으면 바로 로그아웃
           clearAuthStorage()
           if (typeof window !== 'undefined') window.location.href = '/login'
           return Promise.reject(error)
         }
 
-        // 표준 리프레시 요청 (백엔드가 지원해야 함)
-        // 필요 시 본문 키 이름을 서버 구현에 맞게 조정
         const res = await api.post('/auth/refresh', { refresh_token: refreshToken })
-
         const newAccess = res?.data?.access_token || res?.data?.token
         const newRefresh = res?.data?.refresh_token
 
         if (newAccess) setAccessToken(newAccess)
         if (newRefresh) setRefreshToken(newRefresh)
 
-        // 원 요청의 Authorization 갱신 후 재시도
         originalRequest.headers = originalRequest.headers || {}
         if (newAccess) {
           originalRequest.headers['Authorization'] = `Bearer ${newAccess}`
         }
         return api(originalRequest)
       } catch (refreshError) {
-        // 리프레시 실패 → 완전 로그아웃
         clearAuthStorage()
         if (typeof window !== 'undefined') window.location.href = '/login'
         return Promise.reject(refreshError)
@@ -129,12 +112,9 @@ api.interceptors.response.use(
 )
 
 /**
- * 선택: 로그인/로그아웃 헬퍼
- * - 페이지/훅에서 직접 사용할 수 있음
+ * 로그인/로그아웃 헬퍼
  */
 export function saveLoginResult(payload: any) {
-  // 백엔드 응답의 다양한 형태 대응
-  // e.g. { token, user } 또는 { access_token, refresh_token, user }
   const token = payload?.token || payload?.access_token
   const refresh = payload?.refresh_token
   const user = payload?.user
@@ -149,4 +129,23 @@ export function saveLoginResult(payload: any) {
 export function logoutToLogin() {
   clearAuthStorage()
   if (typeof window !== 'undefined') window.location.href = '/login'
+}
+
+/**
+ * API 헬퍼 함수들
+ */
+export async function getDashboardMetrics() {
+  try {
+    const response = await api.get('/metrics/dashboard')
+    return response.data
+  } catch (error) {
+    console.error('Failed to fetch dashboard metrics:', error)
+    return {
+      users: { total: 0, active: 0, suspended: 0 },
+      reports: { total: 0, pending: 0 },
+      bannedWords: 0,
+      activeAnnouncements: 0,
+      newUsers: { day: 0, week: 0, month: 0 },
+    }
+  }
 }
