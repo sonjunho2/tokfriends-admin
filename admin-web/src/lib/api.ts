@@ -1,29 +1,25 @@
 // admin-web/src/lib/api.ts
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
 
-/**
- * BASE URL 구성
- * - 1순위: NEXT_PUBLIC_API_BASE_URL (빌드 시 치환)
- * - 2순위: 기존 하드코딩 값(안전 폴백)
- * - 트레일링 슬래시 제거
- */
+// 1. 환경변수 → 2. 하드코딩 폴백
 const ENV_BASE = process.env.NEXT_PUBLIC_API_BASE_URL
 const FALLBACK_BASE = 'https://tok-friends-api.onrender.com'
 const RAW_BASE = (ENV_BASE && ENV_BASE.trim().length > 0 ? ENV_BASE : FALLBACK_BASE) as string
 const API_BASE_URL = RAW_BASE.replace(/\/+$/, '')
 
-/** 디버깅용: 실제 BASE URL을 브라우저 콘솔에 표기 */
+// 디버깅용 콘솔 출력
 if (typeof window !== 'undefined') {
-  // eslint-disable-next-line no-console
   console.log('[TokFriends Admin] API_BASE_URL =', API_BASE_URL)
 }
 
-/** axios 인스턴스 */
 export const api = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true,
   headers: { 'Content-Type': 'application/json' },
 })
+
+// 이하 토큰 유틸/인터셉터/헬퍼 함수는 그대로 유지...
+
 
 /** 토큰 도우미 */
 const TOKEN_KEY = 'tokfriends_admin_token'
