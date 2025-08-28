@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/use-toast'
-import { postForm, postJson, saveLoginResult, api } from '@/lib/api'
+import { postForm, saveLoginResult, api } from '@/lib/api'
 import type { AxiosError } from 'axios'
 
 export default function LoginPage() {
@@ -16,7 +16,6 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [health, setHealth] = useState<'ok' | 'bad' | 'idle'>('idle')
 
-  // 진입 시 헬스체크(가시화)
   useEffect(() => {
     let mounted = true
     ;(async () => {
@@ -32,7 +31,6 @@ export default function LoginPage() {
     return () => { mounted = false }
   }, [])
 
-  // 에러 로깅 헬퍼(타입 안전)
   function logAxios(prefix: string, err: unknown, level: 'warn' | 'error' = 'warn') {
     const ax = err as AxiosError | undefined
     const baseURL = ax?.config?.baseURL ?? ''
@@ -59,34 +57,10 @@ export default function LoginPage() {
     }
 
     setIsLoading(true)
-
     try {
-      let result: any | null = null
-      let lastErr: unknown = null
-
-      /**
-       * 프리플라이트 회피 전략:
-       * - 로그인 요청만 x-www-form-urlencoded 로 전송
-       * - 1차: /auth/login (5초)
-       * - 2차: /auth/login/email (3초)
-       */
-      try {
-        const r1 = await postForm('/auth/login', data, { timeout: 5000 })
-        result = r1?.data
-      } catch (e) {
-        lastErr = e
-        logAxios('[login] /auth/login failed or timed out', e, 'warn')
-      }
-
-      if (!(result?.token || result?.access_token)) {
-        try {
-          const r2 = await postForm('/auth/login/email', data, { timeout: 3000 })
-          result = r2?.data
-        } catch (e) {
-          lastErr = e
-          logAxios('[login] /auth/login/email failed or timed out', e, 'warn')
-        }
-      }
+      // ✅ 백엔드가 실제로 사용하는 단일 엔드포인트
+      const r = await postForm('/auth/login/email', data, { timeout: 8000 })
+      const result: any = r?.data
 
       if (result?.token || result?.access_token) {
         saveLoginResult(result)
@@ -95,17 +69,22 @@ export default function LoginPage() {
         return
       }
 
-      throw lastErr || new Error('로그인 실패')
+      // 응답은 200인데 토큰이 없을 때
+      throw new Error('서버 응답에 토큰이 없습니다.')
     } catch (err) {
       logAxios('[Login Error]', err, 'error')
 
       const ax = err as AxiosError | undefined
+      const status = ax?.response?.status
       const serverMsg = (ax?.response?.data as any)?.message
-      const msg = Array.isArray(serverMsg)
-        ? serverMsg.join(', ')
-        : (serverMsg || ax?.message || '로그인에 실패했습니다.')
+      const msg =
+        status === 401
+          ? '이메일 또는 비밀번호가 올바르지 않습니다.'
+          : Array.isArray(serverMsg)
+          ? serverMsg.join(', ')
+          : (serverMsg || ax?.message || '로그인에 실패했습니다.')
 
-      toast({ title: '로그인 실패', description: String(msg), variant: 'destructive' })
+      toast({ title: `로그인 실패${status ? ` (${status})` : ''}`, description: String(msg), variant: 'destructive' })
     } finally {
       setIsLoading(false)
     }
