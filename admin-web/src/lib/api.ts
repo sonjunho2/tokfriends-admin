@@ -46,7 +46,7 @@ export function clearAuthStorage() {
   localStorage.removeItem('user')
 }
 
-/** ✅ 레이아웃/페이지에서 사용하는 표준 로그아웃 (layout.tsx가 import) */
+/** 표준 로그아웃: 저장 토큰 삭제 후 /login 이동 */
 export function logoutToLogin() {
   clearAuthStorage()
   if (typeof window !== 'undefined') {
@@ -64,14 +64,10 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   // 진단 로그: 토큰 부착 여부(앞 10자만)
   if (typeof window !== 'undefined') {
     const short = token ? token.slice(0, 10) + '…' : '(no token)'
+    const method = (config.method || 'GET').toUpperCase()
+    const fullUrl = `${config.baseURL ?? ''}${config.url ?? ''}`
     // eslint-disable-next-line no-console
-    console.info(
-      '[TokFriends Admin] ->',
-      (config.method || 'GET').toUpperCase(),
-      config.baseURL + (config.url || ''),
-      '| auth =',
-      short
-    )
+    console.info('[TokFriends Admin] ->', method, fullUrl, '| auth =', short)
   }
   return config
 })
@@ -82,24 +78,25 @@ api.interceptors.response.use(
     const status = error.response?.status
     const message = (error.response?.data as any)?.message || error.message || ''
 
+    // 안전하게 전체 URL 구성 (strict 모드 대응)
+    const fullUrl = `${error.config?.baseURL ?? ''}${error.config?.url ?? ''}`
+
     if (status === 401) {
       // eslint-disable-next-line no-console
-      console.warn(
-        '[TokFriends Admin] 401 from',
-        error.config?.baseURL + error.config?.url,
-        '| message =',
-        message
-      )
+      console.warn('[TokFriends Admin] 401 from', fullUrl, '| message =', message)
       // refresh 플로우가 없다면 즉시 재로그인
       logoutToLogin()
-    } else if (typeof window !== 'undefined') {
-      // eslint-disable-next-line no-console
-      console.error('[TokFriends Admin] API error @', API_BASE_URL, error)
+    } else {
+      if (typeof window !== 'undefined') {
+        // eslint-disable-next-line no-console
+        console.error('[TokFriends Admin] API error @', fullUrl || API_BASE_URL, error)
+      }
     }
     return Promise.reject(error)
   }
 )
 
+// 공통 POST 헬퍼들
 export function postJson<T = any>(url: string, data?: any, config?: AxiosRequestConfig<T>) {
   return api.post<T>(url, data, {
     headers: { 'Content-Type': 'application/json' },
@@ -128,6 +125,7 @@ export function saveLoginResult(payload: any) {
   }
 }
 
+// 대시보드 메트릭스
 export async function getDashboardMetrics() {
   const res = await api.get('/metrics/dashboard')
   return res.data
