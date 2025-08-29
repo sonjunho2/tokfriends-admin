@@ -7,21 +7,8 @@ import { Input } from '@/components/ui/input'
 import { api } from '@/lib/api'
 import { useToast } from '@/components/ui/use-toast'
 
-type UserRow = {
-  id: string
-  email?: string
-  nickname?: string
-  status?: 'ACTIVE' | 'SUSPENDED'
-  createdAt?: string
-}
-
-type Paginated<T> =
-  | { data: T[]; totalPages?: number; total?: number; pageSize?: number }
-  | { items: T[]; totalPages?: number; total?: number; pageSize?: number }
-  | T[]
-
 export default function UsersPage() {
-  const [users, setUsers] = useState<UserRow[]>([])
+  const [users, setUsers] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
@@ -29,38 +16,19 @@ export default function UsersPage() {
   const { toast } = useToast()
 
   useEffect(() => {
-    void fetchUsers()
+    fetchUsers()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page])
-
-  function extract(list: Paginated<UserRow>, limit: number) {
-    if (Array.isArray(list)) {
-      return { rows: list, pages: 1 }
-    }
-    const rows = Array.isArray((list as any).data) ? (list as any).data : (list as any).items ?? []
-    const total = (list as any).total
-    const pageSize = (list as any).pageSize ?? limit
-    const pages = (list as any).totalPages ?? (total && pageSize ? Math.max(1, Math.ceil(total / pageSize)) : 1)
-    return { rows, pages }
-  }
 
   const fetchUsers = async () => {
     setLoading(true)
     try {
-      const limit = 10
-      const res = await api.get<Paginated<UserRow>>('/admin/users', {
-        params: { page, limit, search: search || undefined },
-      })
-      const { rows, pages } = extract(res.data, limit)
+      const res = await api.get('/admin/users', { params: { page, limit: 10, search } })
+      const rows = res.data?.data || res.data?.items || []
       setUsers(rows)
-      setTotalPages(pages)
-    } catch {
-      toast({
-        title: '오류',
-        description: '사용자 목록을 불러오는데 실패했습니다.',
-        variant: 'destructive',
-      })
-      setUsers([])
-      setTotalPages(1)
+      setTotalPages(res.data?.totalPages || 1)
+    } catch (e) {
+      toast({ title: '오류', description: '사용자 목록 조회 실패', variant: 'destructive' })
     } finally {
       setLoading(false)
     }
@@ -68,20 +36,16 @@ export default function UsersPage() {
 
   const handleSearch = () => {
     setPage(1)
-    void fetchUsers()
+    fetchUsers()
   }
 
-  const handleStatusChange = async (userId: string, status: 'ACTIVE' | 'SUSPENDED') => {
+  const handleStatusChange = async (userId: string, status: string) => {
     try {
       await api.patch(`/admin/users/${userId}/status`, { status })
-      toast({ title: '성공', description: '사용자 상태가 변경되었습니다.' })
-      void fetchUsers()
+      toast({ title: '성공', description: '상태 변경됨' })
+      fetchUsers()
     } catch {
-      toast({
-        title: '오류',
-        description: '상태 변경에 실패했습니다.',
-        variant: 'destructive',
-      })
+      toast({ title: '오류', description: '상태 변경 실패', variant: 'destructive' })
     }
   }
 
@@ -93,16 +57,12 @@ export default function UsersPage() {
     {
       key: 'actions',
       label: '액션',
-      render: (user: UserRow) => (
+      render: (user: any) => (
         <div className="flex gap-2">
           {user.status === 'ACTIVE' ? (
-            <Button size="sm" variant="destructive" onClick={() => handleStatusChange(user.id, 'SUSPENDED')}>
-              정지
-            </Button>
+            <Button size="sm" variant="destructive" onClick={() => handleStatusChange(user.id, 'SUSPENDED')}>정지</Button>
           ) : (
-            <Button size="sm" variant="default" onClick={() => handleStatusChange(user.id, 'ACTIVE')}>
-              활성화
-            </Button>
+            <Button size="sm" variant="default" onClick={() => handleStatusChange(user.id, 'ACTIVE')}>활성화</Button>
           )}
         </div>
       ),
@@ -112,29 +72,15 @@ export default function UsersPage() {
   return (
     <div>
       <h1 className="text-3xl font-bold mb-8">사용자 관리</h1>
-
       <div className="flex gap-4 mb-6">
-        <Input
-          placeholder="이메일 또는 닉네임 검색"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="max-w-sm"
-        />
+        <Input placeholder="이메일 또는 닉네임 검색" value={search} onChange={(e) => setSearch(e.target.value)} />
         <Button onClick={handleSearch}>검색</Button>
       </div>
-
       <DataTable columns={columns} data={users} loading={loading} />
-
       <div className="flex justify-center gap-2 mt-4">
-        <Button variant="outline" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
-          이전
-        </Button>
-        <span className="flex items-center px-4">
-          {page} / {totalPages}
-        </span>
-        <Button variant="outline" onClick={() => setPage((p) => p + 1)} disabled={page >= totalPages}>
-          다음
-        </Button>
+        <Button variant="outline" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>이전</Button>
+        <span className="flex items-center px-4">{page} / {totalPages}</span>
+        <Button variant="outline" onClick={() => setPage((p) => p + 1)} disabled={page >= totalPages}>다음</Button>
       </div>
     </div>
   )
