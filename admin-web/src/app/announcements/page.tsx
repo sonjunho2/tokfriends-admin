@@ -10,8 +10,18 @@ import { Switch } from '@/components/ui/switch'
 import { api } from '@/lib/api'
 import { useToast } from '@/components/ui/use-toast'
 
+type Announcement = {
+  id: string
+  title: string
+  body: string
+  isActive: boolean
+  createdAt?: string
+  startsAt?: string
+  endsAt?: string | null
+}
+
 export default function AnnouncementsPage() {
-  const [announcements, setAnnouncements] = useState([])
+  const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [loading, setLoading] = useState(false)
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
@@ -20,20 +30,22 @@ export default function AnnouncementsPage() {
   const { toast } = useToast()
 
   useEffect(() => {
-    fetchAnnouncements()
+    void fetchAnnouncements()
   }, [])
 
   const fetchAnnouncements = async () => {
     setLoading(true)
     try {
-      const response = await api.get('/announcements')
-      setAnnouncements(response.data)
-    } catch (error) {
+      const res = await api.get<Announcement[] | { items: Announcement[] }>('/admin/announcements')
+      const list = Array.isArray(res.data) ? res.data : res.data.items ?? []
+      setAnnouncements(list)
+    } catch {
       toast({
         title: '오류',
         description: '공지사항 목록을 불러오는데 실패했습니다.',
-        variant: 'destructive'
+        variant: 'destructive',
       })
+      setAnnouncements([])
     } finally {
       setLoading(false)
     }
@@ -41,62 +53,51 @@ export default function AnnouncementsPage() {
 
   const handleAdd = async () => {
     try {
-      await api.post('/announcements', {
+      await api.post('/admin/announcements', {
         title,
         body,
         isActive,
-        startsAt: new Date()
+        startsAt: new Date().toISOString(),
       })
-      toast({
-        title: '성공',
-        description: '공지사항이 추가되었습니다.',
-      })
+      toast({ title: '성공', description: '공지사항이 추가되었습니다.' })
       setDialogOpen(false)
       setTitle('')
       setBody('')
       setIsActive(false)
-      fetchAnnouncements()
-    } catch (error) {
+      void fetchAnnouncements()
+    } catch {
       toast({
         title: '오류',
         description: '공지사항 추가에 실패했습니다.',
-        variant: 'destructive'
+        variant: 'destructive',
       })
     }
   }
 
   const handleToggle = async (id: string, currentStatus: boolean) => {
     try {
-      await api.patch(`/announcements/${id}`, {
-        isActive: !currentStatus
-      })
-      toast({
-        title: '성공',
-        description: '공지사항 상태가 변경되었습니다.',
-      })
-      fetchAnnouncements()
-    } catch (error) {
+      await api.patch(`/admin/announcements/${id}`, { isActive: !currentStatus })
+      toast({ title: '성공', description: '공지사항 상태가 변경되었습니다.' })
+      void fetchAnnouncements()
+    } catch {
       toast({
         title: '오류',
         description: '상태 변경에 실패했습니다.',
-        variant: 'destructive'
+        variant: 'destructive',
       })
     }
   }
 
   const handleDelete = async (id: string) => {
     try {
-      await api.delete(`/announcements/${id}`)
-      toast({
-        title: '성공',
-        description: '공지사항이 삭제되었습니다.',
-      })
-      fetchAnnouncements()
-    } catch (error) {
+      await api.delete(`/admin/announcements/${id}`)
+      toast({ title: '성공', description: '공지사항이 삭제되었습니다.' })
+      void fetchAnnouncements()
+    } catch {
       toast({
         title: '오류',
         description: '공지사항 삭제에 실패했습니다.',
-        variant: 'destructive'
+        variant: 'destructive',
       })
     }
   }
@@ -104,30 +105,23 @@ export default function AnnouncementsPage() {
   const columns = [
     { key: 'title', label: '제목' },
     { key: 'body', label: '내용' },
-    { 
-      key: 'isActive', 
+    {
+      key: 'isActive',
       label: '활성',
-      render: (announcement: any) => (
-        <Switch
-          checked={announcement.isActive}
-          onCheckedChange={() => handleToggle(announcement.id, announcement.isActive)}
-        />
-      )
+      render: (a: Announcement) => (
+        <Switch checked={a.isActive} onCheckedChange={() => handleToggle(a.id, a.isActive)} />
+      ),
     },
     { key: 'createdAt', label: '생성일' },
     {
       key: 'actions',
       label: '액션',
-      render: (announcement: any) => (
-        <Button
-          size="sm"
-          variant="destructive"
-          onClick={() => handleDelete(announcement.id)}
-        >
+      render: (a: Announcement) => (
+        <Button size="sm" variant="destructive" onClick={() => handleDelete(a.id)}>
           삭제
         </Button>
-      )
-    }
+      ),
+    },
   ]
 
   return (
@@ -143,36 +137,21 @@ export default function AnnouncementsPage() {
               <DialogTitle>새 공지사항</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
-              <Input
-                placeholder="제목"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-              />
-              <Textarea
-                placeholder="내용"
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-                rows={5}
-              />
+              <Input placeholder="제목" value={title} onChange={(e) => setTitle(e.target.value)} />
+              <Textarea placeholder="내용" value={body} onChange={(e) => setBody(e.target.value)} rows={5} />
               <div className="flex items-center space-x-2">
-                <Switch
-                  id="active"
-                  checked={isActive}
-                  onCheckedChange={setIsActive}
-                />
+                <Switch id="active" checked={isActive} onCheckedChange={setIsActive} />
                 <label htmlFor="active">즉시 활성화</label>
               </div>
-              <Button onClick={handleAdd} className="w-full">추가</Button>
+              <Button onClick={handleAdd} className="w-full">
+                추가
+              </Button>
             </div>
           </DialogContent>
         </Dialog>
       </div>
 
-      <DataTable
-        columns={columns}
-        data={announcements}
-        loading={loading}
-      />
+      <DataTable columns={columns} data={announcements} loading={loading} />
     </div>
   )
 }
