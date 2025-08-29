@@ -46,7 +46,7 @@ export function clearAuthStorage() {
   localStorage.removeItem('user')
 }
 
-/** ✅ 표준 로그아웃: 저장 토큰 삭제 후 /login 이동 (layout.tsx가 import) */
+/** ✅ 레이아웃/페이지에서 사용하는 표준 로그아웃 (layout.tsx가 import) */
 export function logoutToLogin() {
   clearAuthStorage()
   if (typeof window !== 'undefined') {
@@ -67,7 +67,7 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
     // eslint-disable-next-line no-console
     console.info(
       '[TokFriends Admin] ->',
-      config.method?.toUpperCase(),
+      (config.method || 'GET').toUpperCase(),
       config.baseURL + (config.url || ''),
       '| auth =',
       short
@@ -90,13 +90,11 @@ api.interceptors.response.use(
         '| message =',
         message
       )
-      // refresh 플로우 없으므로 즉시 재로그인
+      // refresh 플로우가 없다면 즉시 재로그인
       logoutToLogin()
-    } else {
-      if (typeof window !== 'undefined') {
-        // eslint-disable-next-line no-console
-        console.error('[TokFriends Admin] API error @', API_BASE_URL, error)
-      }
+    } else if (typeof window !== 'undefined') {
+      // eslint-disable-next-line no-console
+      console.error('[TokFriends Admin] API error @', API_BASE_URL, error)
     }
     return Promise.reject(error)
   }
