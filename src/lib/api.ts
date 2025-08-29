@@ -1,4 +1,4 @@
-// admin-web/src/lib/api.ts
+// src/lib/api.ts  (또는 admin-web/src/lib/api.ts)
 import axios, { AxiosError, InternalAxiosRequestConfig, AxiosRequestConfig } from 'axios'
 
 const ENV_BASE = process.env.NEXT_PUBLIC_API_BASE_URL
@@ -46,7 +46,7 @@ export function clearAuthStorage() {
   localStorage.removeItem('user')
 }
 
-/** 레이아웃/페이지에서 사용할 수 있는 표준 로그아웃 함수 */
+/** ✅ 레이아웃/페이지에서 쓰는 표준 로그아웃 함수 (빌드 에러 해결 포인트) */
 export function logoutToLogin() {
   clearAuthStorage()
   if (typeof window !== 'undefined') {
@@ -125,4 +125,12 @@ export function saveLoginResult(payload: any) {
 
   if (token) setAccessToken(token)
   if (refresh) setRefreshToken(refresh)
-  if (typeof window !== 'undefined' && user
+  if (typeof window !== 'undefined' && user) {
+    localStorage.setItem('user', JSON.stringify(user))
+  }
+}
+
+export async function getDashboardMetrics() {
+  const res = await api.get('/metrics/dashboard')
+  return res.data
+}
