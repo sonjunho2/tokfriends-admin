@@ -1,4 +1,4 @@
-// admin-web/src/lib/api.ts
+// tokfriends-admin/admin-web/src/lib/api.ts
 import axios, { AxiosError, InternalAxiosRequestConfig, AxiosRequestConfig } from 'axios'
 
 const ENV_BASE = process.env.NEXT_PUBLIC_API_BASE_URL
@@ -46,6 +46,14 @@ export function clearAuthStorage() {
   localStorage.removeItem('user')
 }
 
+/** ✅ 표준 로그아웃: 저장 토큰 삭제 후 /login 이동 (layout.tsx가 import) */
+export function logoutToLogin() {
+  clearAuthStorage()
+  if (typeof window !== 'undefined') {
+    window.location.href = '/login'
+  }
+}
+
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = getAccessToken()
   if (token) {
@@ -53,11 +61,17 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
     config.headers['Authorization'] = `Bearer ${token}`
   }
 
-  // 🟦 진단 로그: 토큰이 실제로 붙는지 확인(앞 10자만)
+  // 진단 로그: 토큰 부착 여부(앞 10자만)
   if (typeof window !== 'undefined') {
     const short = token ? token.slice(0, 10) + '…' : '(no token)'
     // eslint-disable-next-line no-console
-    console.info('[TokFriends Admin] ->', config.method?.toUpperCase(), config.baseURL + (config.url || ''), '| auth =', short)
+    console.info(
+      '[TokFriends Admin] ->',
+      config.method?.toUpperCase(),
+      config.baseURL + (config.url || ''),
+      '| auth =',
+      short
+    )
   }
   return config
 })
@@ -68,16 +82,16 @@ api.interceptors.response.use(
     const status = error.response?.status
     const message = (error.response?.data as any)?.message || error.message || ''
 
-    // 🟥 토큰 오류 처리: 바로 재로그인 유도
     if (status === 401) {
       // eslint-disable-next-line no-console
-      console.warn('[TokFriends Admin] 401 from', error.config?.baseURL + error.config?.url, '| message =', message)
-
-      // refresh 토큰 플로우가 없다면 바로 리다이렉트
-      clearAuthStorage()
-      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
-        window.location.href = '/login'
-      }
+      console.warn(
+        '[TokFriends Admin] 401 from',
+        error.config?.baseURL + error.config?.url,
+        '| message =',
+        message
+      )
+      // refresh 플로우 없으므로 즉시 재로그인
+      logoutToLogin()
     } else {
       if (typeof window !== 'undefined') {
         // eslint-disable-next-line no-console
@@ -88,13 +102,13 @@ api.interceptors.response.use(
   }
 )
 
-// 공통 POST 헬퍼
 export function postJson<T = any>(url: string, data?: any, config?: AxiosRequestConfig<T>) {
   return api.post<T>(url, data, {
     headers: { 'Content-Type': 'application/json' },
     ...(config || {}),
   })
 }
+
 export function postForm<T = any>(url: string, data?: Record<string, any>, config?: AxiosRequestConfig<T>) {
   const body = new URLSearchParams()
   Object.entries(data || {}).forEach(([k, v]) => body.append(k, String(v ?? '')))
@@ -104,7 +118,6 @@ export function postForm<T = any>(url: string, data?: Record<string, any>, confi
   })
 }
 
-// 로그인 저장
 export function saveLoginResult(payload: any) {
   const token = payload?.token || payload?.access_token
   const refresh = payload?.refresh_token
@@ -117,7 +130,6 @@ export function saveLoginResult(payload: any) {
   }
 }
 
-// 대시보드 메트릭스
 export async function getDashboardMetrics() {
   const res = await api.get('/metrics/dashboard')
   return res.data
