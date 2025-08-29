@@ -1,4 +1,3 @@
-// src/lib/api.ts  (또는 admin-web/src/lib/api.ts)
 import axios, { AxiosError, InternalAxiosRequestConfig, AxiosRequestConfig } from 'axios'
 
 const ENV_BASE = process.env.NEXT_PUBLIC_API_BASE_URL
@@ -46,7 +45,7 @@ export function clearAuthStorage() {
   localStorage.removeItem('user')
 }
 
-/** ✅ 레이아웃/페이지에서 쓰는 표준 로그아웃 함수 (빌드 에러 해결 포인트) */
+/** 표준 로그아웃: 저장 토큰 삭제 후 /login 이동 */
 export function logoutToLogin() {
   clearAuthStorage()
   if (typeof window !== 'undefined') {
@@ -60,18 +59,10 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
     config.headers = config.headers || {}
     config.headers['Authorization'] = `Bearer ${token}`
   }
-
-  // 진단 로그: 토큰 부착 여부 확인(앞 10자만)
   if (typeof window !== 'undefined') {
     const short = token ? token.slice(0, 10) + '…' : '(no token)'
     // eslint-disable-next-line no-console
-    console.info(
-      '[TokFriends Admin] ->',
-      config.method?.toUpperCase(),
-      config.baseURL + (config.url || ''),
-      '| auth =',
-      short
-    )
+    console.info('[TokFriends Admin] ->', config.method?.toUpperCase(), config.baseURL + (config.url || ''), '| auth =', short)
   }
   return config
 })
@@ -81,53 +72,35 @@ api.interceptors.response.use(
   async (error: AxiosError<any>) => {
     const status = error.response?.status
     const message = (error.response?.data as any)?.message || error.message || ''
-
     if (status === 401) {
       // eslint-disable-next-line no-console
-      console.warn(
-        '[TokFriends Admin] 401 from',
-        error.config?.baseURL + error.config?.url,
-        '| message =',
-        message
-      )
-      // refresh 플로우가 없다면 즉시 재로그인
+      console.warn('[TokFriends Admin] 401 from', error.config?.baseURL + error.config?.url, '| message =', message)
       logoutToLogin()
-    } else {
-      if (typeof window !== 'undefined') {
-        // eslint-disable-next-line no-console
-        console.error('[TokFriends Admin] API error @', API_BASE_URL, error)
-      }
+    } else if (typeof window !== 'undefined') {
+      // eslint-disable-next-line no-console
+      console.error('[TokFriends Admin] API error @', API_BASE_URL, error)
     }
     return Promise.reject(error)
   }
 )
 
 export function postJson<T = any>(url: string, data?: any, config?: AxiosRequestConfig<T>) {
-  return api.post<T>(url, data, {
-    headers: { 'Content-Type': 'application/json' },
-    ...(config || {}),
-  })
+  return api.post<T>(url, data, { headers: { 'Content-Type': 'application/json' }, ...(config || {}) })
 }
 
 export function postForm<T = any>(url: string, data?: Record<string, any>, config?: AxiosRequestConfig<T>) {
   const body = new URLSearchParams()
   Object.entries(data || {}).forEach(([k, v]) => body.append(k, String(v ?? '')))
-  return api.post<T>(url, body, {
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    ...(config || {}),
-  })
+  return api.post<T>(url, body, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, ...(config || {}) })
 }
 
 export function saveLoginResult(payload: any) {
   const token = payload?.token || payload?.access_token
   const refresh = payload?.refresh_token
   const user = payload?.user
-
   if (token) setAccessToken(token)
   if (refresh) setRefreshToken(refresh)
-  if (typeof window !== 'undefined' && user) {
-    localStorage.setItem('user', JSON.stringify(user))
-  }
+  if (typeof window !== 'undefined' && user) localStorage.setItem('user', JSON.stringify(user))
 }
 
 export async function getDashboardMetrics() {
