@@ -7,50 +7,73 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { api } from '@/lib/api'
 import { useToast } from '@/components/ui/use-toast'
 
+type ReportRow = {
+  id: string
+  category?: string
+  detail?: string
+  status?: 'PENDING' | 'RESOLVED' | 'REJECTED'
+  createdAt?: string
+}
+
+type Paginated<T> =
+  | { data: T[]; totalPages?: number; total?: number; pageSize?: number }
+  | { items: T[]; totalPages?: number; total?: number; pageSize?: number }
+  | T[]
+
 export default function ReportsPage() {
-  const [reports, setReports] = useState([])
+  const [reports, setReports] = useState<ReportRow[]>([])
   const [loading, setLoading] = useState(false)
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
-  const [statusFilter, setStatusFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState<string>('') // 빈 문자열 허용
   const { toast } = useToast()
 
   useEffect(() => {
-    fetchReports()
+    void fetchReports()
   }, [page, statusFilter])
+
+  function extract(list: Paginated<ReportRow>, limit: number) {
+    if (Array.isArray(list)) return { rows: list, pages: 1 }
+    const rows = Array.isArray((list as any).data) ? (list as any).data : (list as any).items ?? []
+    const total = (list as any).total
+    const pageSize = (list as any).pageSize ?? limit
+    const pages = (list as any).totalPages ?? (total && pageSize ? Math.max(1, Math.ceil(total / pageSize)) : 1)
+    return { rows, pages }
+  }
 
   const fetchReports = async () => {
     setLoading(true)
     try {
-      const response = await api.get('/reports', {
-        params: { page, limit: 10, status: statusFilter || undefined }
+      const limit = 10
+      const res = await api.get<Paginated<ReportRow>>('/admin/reports', {
+        params: { page, limit, status: statusFilter || undefined },
       })
-      setReports(response.data.data)
-      setTotalPages(response.data.totalPages)
-    } catch (error) {
+      const { rows, pages } = extract(res.data, limit)
+      setReports(rows)
+      setTotalPages(pages)
+    } catch {
       toast({
         title: '오류',
         description: '신고 목록을 불러오는데 실패했습니다.',
-        variant: 'destructive'
+        variant: 'destructive',
       })
+      setReports([])
+      setTotalPages(1)
     } finally {
       setLoading(false)
     }
   }
 
-  const handleStatusChange = async (reportId: string, status: string) => {
+  const handleStatusChange = async (reportId: string, status: 'RESOLVED' | 'REJECTED') => {
     try {
-      await api.patch(`/reports/${reportId}/status`, { status })
-      toast({
-        title: '성공',
-        description: '신고 상태가 변경되었습니다.',
-      })
-      fetchReports()
-    } catch (error) {
+      await api.patch(`/admin/reports/${reportId}/status`, { status })
+      toast({ title: '성공', description: '신고 상태가 변경되었습니다.' })
+      void fetchReports()
+    } catch {
       toast({
         title: '오류',
         description: '상태 변경에 실패했습니다.',
-        variant: 'destructive'
+        variant: 'destructive',
       })
     }
   }
@@ -64,37 +87,26 @@ export default function ReportsPage() {
     {
       key: 'actions',
       label: '액션',
-      render: (report: any) => (
-        <div className="flex gap-2">
-          {report.status === 'PENDING' && (
-            <>
-              <Button
-                size="sm"
-                variant="default"
-                onClick={() => handleStatusChange(report.id, 'RESOLVED')}
-              >
-                처리완료
-              </Button>
-              <Button
-                size="sm"
-                variant="destructive"
-                onClick={() => handleStatusChange(report.id, 'REJECTED')}
-              >
-                반려
-              </Button>
-            </>
-          )}
-        </div>
-      )
-    }
+      render: (r: ReportRow) =>
+        r.status === 'PENDING' ? (
+          <div className="flex gap-2">
+            <Button size="sm" variant="default" onClick={() => handleStatusChange(r.id, 'RESOLVED')}>
+              처리완료
+            </Button>
+            <Button size="sm" variant="destructive" onClick={() => handleStatusChange(r.id, 'REJECTED')}>
+              반려
+            </Button>
+          </div>
+        ) : null,
+    },
   ]
 
   return (
     <div>
       <h1 className="text-3xl font-bold mb-8">신고 관리</h1>
-      
+
       <div className="flex gap-4 mb-6">
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
+        <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v)}>
           <SelectTrigger className="w-[180px]">
             <SelectValue placeholder="상태 필터" />
           </SelectTrigger>
@@ -107,28 +119,16 @@ export default function ReportsPage() {
         </Select>
       </div>
 
-      <DataTable
-        columns={columns}
-        data={reports}
-        loading={loading}
-      />
+      <DataTable columns={columns} data={reports} loading={loading} />
 
       <div className="flex justify-center gap-2 mt-4">
-        <Button
-          variant="outline"
-          onClick={() => setPage(p => Math.max(1, p - 1))}
-          disabled={page === 1}
-        >
+        <Button variant="outline" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
           이전
         </Button>
         <span className="flex items-center px-4">
           {page} / {totalPages}
         </span>
-        <Button
-          variant="outline"
-          onClick={() => setPage(p => p + 1)}
-          disabled={page >= totalPages}
-        >
+        <Button variant="outline" onClick={() => setPage((p) => p + 1)} disabled={page >= totalPages}>
           다음
         </Button>
       </div>
