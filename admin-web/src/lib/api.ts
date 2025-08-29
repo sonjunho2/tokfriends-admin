@@ -1,35 +1,22 @@
 // admin-web/src/lib/api.ts
 import axios, { AxiosError, InternalAxiosRequestConfig, AxiosRequestConfig } from 'axios'
 
-/**
- * BASE URL
- * 1) NEXT_PUBLIC_API_BASE_URL 우선
- * 2) 폴백: 기존 하드코딩
- * 3) 트레일링 슬래시 제거
- */
 const ENV_BASE = process.env.NEXT_PUBLIC_API_BASE_URL
 const FALLBACK_BASE = 'https://tok-friends-api.onrender.com'
 const RAW_BASE = (ENV_BASE && ENV_BASE.trim().length > 0 ? ENV_BASE : FALLBACK_BASE) as string
 const API_BASE_URL = RAW_BASE.replace(/\/+$/, '')
 
-/** 디버깅: 실제 호출되는 BASE URL 표시 */
 if (typeof window !== 'undefined') {
   // eslint-disable-next-line no-console
   console.log('[TokFriends Admin] API_BASE_URL =', API_BASE_URL)
 }
 
-/**
- * axios 인스턴스
- * - 전역 'Content-Type' 헤더 설정을 제거(요청별로 지정)
- * - 기본 타임아웃 추가
- */
 export const api = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true,
   timeout: 8000,
 })
 
-/** 토큰 유틸 */
 const TOKEN_KEY = 'tokfriends_admin_token'
 const ACCESS_KEY = 'access_token'
 const REFRESH_KEY = 'refresh_token'
@@ -38,23 +25,19 @@ export function getAccessToken(): string | null {
   if (typeof window === 'undefined') return null
   return localStorage.getItem(TOKEN_KEY) || localStorage.getItem(ACCESS_KEY) || null
 }
-
 export function setAccessToken(token: string) {
   if (typeof window === 'undefined') return
   localStorage.setItem(TOKEN_KEY, token)
   localStorage.setItem(ACCESS_KEY, token)
 }
-
 export function getRefreshToken(): string | null {
   if (typeof window === 'undefined') return null
   return localStorage.getItem(REFRESH_KEY)
 }
-
 export function setRefreshToken(token: string) {
   if (typeof window === 'undefined') return
   localStorage.setItem(REFRESH_KEY, token)
 }
-
 export function clearAuthStorage() {
   if (typeof window === 'undefined') return
   localStorage.removeItem(TOKEN_KEY)
@@ -63,69 +46,55 @@ export function clearAuthStorage() {
   localStorage.removeItem('user')
 }
 
-/** 요청 인터셉터: Authorization 주입 */
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = getAccessToken()
   if (token) {
     config.headers = config.headers || {}
     config.headers['Authorization'] = `Bearer ${token}`
   }
+
+  // 🟦 진단 로그: 토큰이 실제로 붙는지 확인(앞 10자만)
+  if (typeof window !== 'undefined') {
+    const short = token ? token.slice(0, 10) + '…' : '(no token)'
+    // eslint-disable-next-line no-console
+    console.info('[TokFriends Admin] ->', config.method?.toUpperCase(), config.baseURL + (config.url || ''), '| auth =', short)
+  }
   return config
 })
 
-/** 응답 인터셉터: 401 → refresh 재발급 */
 api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError<any>) => {
-    const originalRequest: any = error.config
     const status = error.response?.status
+    const message = (error.response?.data as any)?.message || error.message || ''
 
-    if (status === 401 && originalRequest && !originalRequest._retry) {
-      originalRequest._retry = true
-      try {
-        const refreshToken = getRefreshToken()
-        if (!refreshToken) {
-          clearAuthStorage()
-          if (typeof window !== 'undefined') window.location.href = '/login'
-          return Promise.reject(error)
-        }
-
-        const res = await api.post('/auth/refresh', { refresh_token: refreshToken }, {
-          headers: { 'Content-Type': 'application/json' }, // 이 요청은 JSON 유지
-        })
-        const newAccess = res?.data?.access_token || res?.data?.token
-        const newRefresh = res?.data?.refresh_token
-
-        if (newAccess) setAccessToken(newAccess)
-        if (newRefresh) setRefreshToken(newRefresh)
-
-        originalRequest.headers = originalRequest.headers || {}
-        if (newAccess) originalRequest.headers['Authorization'] = `Bearer ${newAccess}`
-        return api(originalRequest)
-      } catch (refreshError) {
-        clearAuthStorage()
-        if (typeof window !== 'undefined') window.location.href = '/login'
-        return Promise.reject(refreshError)
-      }
-    }
-
-    if (typeof window !== 'undefined') {
+    // 🟥 토큰 오류 처리: 바로 재로그인 유도
+    if (status === 401) {
       // eslint-disable-next-line no-console
-      console.error('[TokFriends Admin] API error @', API_BASE_URL, error)
+      console.warn('[TokFriends Admin] 401 from', error.config?.baseURL + error.config?.url, '| message =', message)
+
+      // refresh 토큰 플로우가 없다면 바로 리다이렉트
+      clearAuthStorage()
+      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+        window.location.href = '/login'
+      }
+    } else {
+      if (typeof window !== 'undefined') {
+        // eslint-disable-next-line no-console
+        console.error('[TokFriends Admin] API error @', API_BASE_URL, error)
+      }
     }
     return Promise.reject(error)
   }
 )
 
-/** 공통 POST 헬퍼: JSON */
+// 공통 POST 헬퍼
 export function postJson<T = any>(url: string, data?: any, config?: AxiosRequestConfig<T>) {
   return api.post<T>(url, data, {
     headers: { 'Content-Type': 'application/json' },
     ...(config || {}),
   })
 }
-
-/** 공통 POST 헬퍼: x-www-form-urlencoded (프리플라이트 회피) */
 export function postForm<T = any>(url: string, data?: Record<string, any>, config?: AxiosRequestConfig<T>) {
   const body = new URLSearchParams()
   Object.entries(data || {}).forEach(([k, v]) => body.append(k, String(v ?? '')))
@@ -135,7 +104,7 @@ export function postForm<T = any>(url: string, data?: Record<string, any>, confi
   })
 }
 
-/** 로그인/로그아웃 헬퍼 */
+// 로그인 저장
 export function saveLoginResult(payload: any) {
   const token = payload?.token || payload?.access_token
   const refresh = payload?.refresh_token
@@ -148,24 +117,8 @@ export function saveLoginResult(payload: any) {
   }
 }
 
-export function logoutToLogin() {
-  clearAuthStorage()
-  if (typeof window !== 'undefined') window.location.href = '/login'
-}
-
-/** 대시보드 안전 폴백 */
+// 대시보드 메트릭스
 export async function getDashboardMetrics() {
-  try {
-    const response = await api.get('/metrics/dashboard')
-    return response.data
-  } catch (error) {
-    console.error('Failed to fetch dashboard metrics:', error)
-    return {
-      users: { total: 0, active: 0, suspended: 0 },
-      reports: { total: 0, pending: 0 },
-      bannedWords: 0,
-      activeAnnouncements: 0,
-      newUsers: { day: 0, week: 0, month: 0 },
-    }
-  }
+  const res = await api.get('/metrics/dashboard')
+  return res.data
 }
