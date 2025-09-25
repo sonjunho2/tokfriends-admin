@@ -1,34 +1,5 @@
 services:
   - type: web
-    name: tokfriends-admin-api
-    env: node
-    plan: free
-    region: oregon
-    rootDir: admin-api
-    buildCommand: npm install --include=dev && npm run prisma:generate && npm run build
-    startCommand: npm run prisma:migrate:deploy && npm run seed:ifneeded && npm run start:prod
-    autoDeploy: true
-    envVars:
-      - key: NODE_VERSION
-        value: "20"
-      - key: NODE_ENV
-        value: production
-      - key: PORT
-        value: "8080"
-      - key: DATABASE_URL
-        sync: false            # Render 대시보드에서 URI 직접 입력
-      - key: ADMIN_EMAIL
-        value: admin@local.com     # 자동 시드용(원하면 바꿔)
-      - key: ADMIN_PASSWORD
-        value: Admin123!       # 자동 시드용(원하면 바꿔)
-      - key: JWT_ACCESS_SECRET
-        generateValue: true
-      - key: JWT_REFRESH_SECRET
-        generateValue: true
-      - key: CORS_ORIGIN
-        value: https://tokfriends-admin-web.onrender.com
-
-  - type: web
     name: tokfriends-admin-web
     env: node
     plan: free
