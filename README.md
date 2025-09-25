@@ -80,10 +80,9 @@ npm run dev
 ```
 
 #### 4. 접속
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:8080/api/admin
-- Swagger 문서: http://localhost:8080/docs
-
+Frontend: http://localhost:3000
+Backend API: http://localhost:4000
+Swagger 문서: http://localhost:4000/docs
 ### Docker를 사용한 실행
 ```bash
 # 전체 스택 실행
@@ -122,7 +121,7 @@ docker-compose down
    - Build Command: `npm ci && npm run build`
    - Start Command: `npm run start`
 4. 환경변수 추가:
-   - `NEXT_PUBLIC_API_BASE_URL`: admin-api의 URL
+NEXT_PUBLIC_API_BASE_URL: tok-friends API의 URL
 
 ## 초기 로그인
 
