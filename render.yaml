@@ -18,7 +18,7 @@ services:
       - key: DATABASE_URL
         sync: false            # Render 대시보드에서 URI 직접 입력
       - key: ADMIN_EMAIL
-        value: admin@local     # 자동 시드용(원하면 바꿔)
+        value: admin@local.com     # 자동 시드용(원하면 바꿔)
       - key: ADMIN_PASSWORD
         value: Admin123!       # 자동 시드용(원하면 바꿔)
       - key: JWT_ACCESS_SECRET
@@ -41,4 +41,4 @@ services:
       - key: NODE_VERSION
         value: "20"
       - key: NEXT_PUBLIC_API_BASE_URL
-        value: https://tokfriends-admin-api.onrender.com
+        value: https://tokfriends-api.onrender.com
