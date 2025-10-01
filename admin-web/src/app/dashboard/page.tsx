@@ -69,14 +69,12 @@ const METRIC_SECTIONS = [
 const ACTION_ITEMS = [
   {
     title: '온보딩 플로우',
-    body:
-      '환영 화면 자동 로그인 분기, 이메일·비밀번호 검증, 필수 약관 수집, 프로필 입력, 가입 후 자동 로그인까지 단계별로 현황을 추적합니다.',
+    body: '환영 화면 자동 로그인 분기, 이메일·비밀번호 검증, 필수 약관 수집, 프로필 입력, 가입 후 자동 로그인까지 단계별로 현황을 추적합니다.',
     link: { href: '/onboarding', label: '온보딩 관리로 이동' },
   },
   {
     title: '채팅 운영',
-    body:
-      '탭바가 숨겨지는 채팅방 UI, 신고 모달, 방 만들기 폴백 등 현재 더미 메시지를 대체할 API 연결 상태를 점검합니다.',
+    body: '탭바가 숨겨지는 채팅방 UI, 신고 모달, 방 만들기 폴백 등 현재 더미 메시지를 대체할 API 연결 상태를 점검합니다.',
     link: { href: '/chat-ops', label: '채팅 운영으로 이동' },
   },
   {
@@ -128,7 +126,7 @@ export default function DashboardPage() {
         ))}
       </section>
 
-            <section>
+      <section>
         <Card>
           <CardHeader>
             <CardTitle>주요 업무 바로가기</CardTitle>
@@ -148,7 +146,7 @@ export default function DashboardPage() {
             ))}
           </CardContent>
         </Card>
-      </div>
+      </section>
     </div>
   )
 }
