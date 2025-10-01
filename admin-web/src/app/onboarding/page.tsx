@@ -358,7 +358,9 @@ export default function OnboardingPage() {
                     <Label>성별</Label>
                     <Select
                       value={selectedUser.gender ?? ''}
-                      onValueChange={(value: OnboardingUser['gender']) => updateSelectedUser({ gender: value })}
+                      onValueChange={(value: string) =>
+                        updateSelectedUser({ gender: value ? (value as OnboardingUser['gender']) : undefined })
+                      }
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="선택" />
