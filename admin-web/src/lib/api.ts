@@ -1,5 +1,10 @@
 // tokfriends-admin/admin-web/src/lib/api.ts
-import axios, { AxiosError, InternalAxiosRequestConfig, AxiosRequestConfig } from 'axios'
+import axios, {
+  AxiosError,
+  InternalAxiosRequestConfig,
+  AxiosRequestConfig,
+  isAxiosError,
+} from 'axios'
 
 const ENV_BASE = process.env.NEXT_PUBLIC_API_BASE_URL
 const FALLBACK_BASE = 'https://tok-friends-api.onrender.com'
@@ -129,4 +134,302 @@ export function saveLoginResult(payload: any) {
 export async function getDashboardMetrics() {
   const res = await api.get('/metrics/dashboard')
   return res.data
+}
+
+// ---------------------------------------------------------------------------
+// 인증 & 헬스체크
+// ---------------------------------------------------------------------------
+
+export interface LoginWithEmailRequest {
+  email: string
+  password: string
+}
+
+export interface LoginWithEmailResponse {
+  access_token?: string
+  token?: string
+  refresh_token?: string
+  user?: unknown
+  [key: string]: unknown
+}
+
+export async function loginWithEmail(payload: LoginWithEmailRequest) {
+  const response = await postForm<LoginWithEmailResponse>('/auth/login/email', payload)
+  return response.data
+}
+
+export async function checkHealth() {
+  const response = await api.get('/health')
+  return response.data
+}
+
+// ---------------------------------------------------------------------------
+// 유틸리티
+// ---------------------------------------------------------------------------
+
+const DEFAULT_ARRAY_KEYS = ['items', 'results', 'data', 'list', 'records']
+
+function unwrapArray<T>(payload: unknown, extraKeys: string[] = []): T[] {
+  if (Array.isArray(payload)) {
+    return payload as T[]
+  }
+
+  if (payload && typeof payload === 'object') {
+    const probeKeys = [...extraKeys, ...DEFAULT_ARRAY_KEYS]
+    for (const key of probeKeys) {
+      const value = (payload as Record<string, unknown>)[key]
+      if (Array.isArray(value)) {
+        return value as T[]
+      }
+    }
+  }
+
+  return []
+}
+
+function ensureStringId(value: unknown, fallbackPrefix: string) {
+  if (typeof value === 'string' && value.trim().length > 0) return value
+  if (typeof value === 'number') return String(value)
+  return `${fallbackPrefix}-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 6)}`
+}
+
+// ---------------------------------------------------------------------------
+// 사용자
+// ---------------------------------------------------------------------------
+
+export interface UserSearchParams {
+  query?: string
+  email?: string
+  nickname?: string
+  status?: string
+  page?: number
+  limit?: number
+  [key: string]: unknown
+}
+
+export interface UserSummary {
+  id: string
+  email?: string
+  nickname?: string
+  status?: string
+  createdAt?: string
+  updatedAt?: string
+  lastActiveAt?: string
+  [key: string]: unknown
+}
+
+export type UserDetail = UserSummary & {
+  profile?: unknown
+  memo?: string
+  marketingOptIn?: boolean
+  [key: string]: unknown
+}
+
+export type UserUpdatePayload = Record<string, unknown>
+
+export async function searchUsers(params: UserSearchParams = {}) {
+  const response = await api.get('/users/search', { params })
+  return unwrapArray<UserSummary>(response.data, ['users'])
+}
+
+export async function getUserById(userId: string) {
+  const response = await api.get(`/users/${userId}`)
+  const data = response.data as UserDetail
+  const id = ensureStringId(data?.id, 'user')
+  return { ...data, id }
+}
+
+export async function updateUserProfile(userId: string, payload: UserUpdatePayload) {
+  const response = await api.patch(`/users/${userId}`, payload)
+  const data = response.data as UserDetail
+  const id = ensureStringId(data?.id ?? userId, 'user')
+  return { ...data, id }
+}
+
+// ---------------------------------------------------------------------------
+// 신고 / 차단
+// ---------------------------------------------------------------------------
+
+export interface ReportPayload {
+  type: string
+  reason: string
+  reportedUserId?: string
+  targetId?: string
+  description?: string
+  [key: string]: unknown
+}
+
+export interface BlockPayload {
+  userId: string
+  reason?: string
+  expiresAt?: string | null
+  [key: string]: unknown
+}
+
+export function submitUserReport(payload: ReportPayload) {
+  return api.post('/community/report', payload)
+}
+
+export function submitUserBlock(payload: BlockPayload) {
+  return api.post('/community/block', payload)
+}
+
+// ---------------------------------------------------------------------------
+// 토픽 / 게시글
+// ---------------------------------------------------------------------------
+
+export interface TopicQuery {
+  status?: string
+  page?: number
+  limit?: number
+  [key: string]: unknown
+}
+
+export interface Topic {
+  id: string
+  title?: string
+  status?: string
+  createdAt?: string
+  updatedAt?: string
+  [key: string]: unknown
+}
+
+export interface Post {
+  id: string
+  topicId?: string
+  title?: string
+  body?: string
+  status?: string
+  createdAt?: string
+  updatedAt?: string
+  [key: string]: unknown
+}
+
+export async function listTopics(params: TopicQuery = {}) {
+  const response = await api.get('/topics', { params })
+  return unwrapArray<Topic>(response.data, ['topics'])
+}
+
+export async function listTopicPosts(topicId: string, params: Record<string, unknown> = {}) {
+  const response = await api.get(`/topics/${topicId}/posts`, { params })
+  return unwrapArray<Post>(response.data, ['posts'])
+}
+
+export async function listPosts(params: Record<string, unknown> = {}) {
+  const response = await api.get('/posts', { params })
+  return unwrapArray<Post>(response.data, ['posts'])
+}
+
+export async function updatePost(postId: string, payload: Record<string, unknown>) {
+  const response = await api.patch(`/posts/${postId}`, payload)
+  const data = response.data as Post
+  const id = ensureStringId(data?.id ?? postId, 'post')
+  return { ...data, id }
+}
+
+export async function deletePost(postId: string) {
+  await api.delete(`/posts/${postId}`)
+}
+
+// ---------------------------------------------------------------------------
+// 공지 / 배너
+// ---------------------------------------------------------------------------
+
+export interface AnnouncementWritePayload {
+  title?: string
+  body?: string | null
+  content?: string | null
+  audience?: string | null
+  link?: string | null
+  isActive?: boolean
+  startsAt?: string | null
+  endsAt?: string | null
+  status?: string | null
+  [key: string]: unknown
+}
+
+export interface Announcement {
+  id: string
+  title: string
+  body?: string | null
+  content?: string | null
+  audience?: string | null
+  link?: string | null
+  isActive?: boolean
+  startsAt?: string | null
+  endsAt?: string | null
+  scheduledAt?: string | null
+  status?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+  [key: string]: unknown
+}
+
+export async function getAnnouncements(params: Record<string, unknown> = {}) {
+  const response = await api.get('/announcements', { params })
+  return unwrapArray<Announcement>(response.data, ['announcements'])
+}
+
+export async function getActiveAnnouncements() {
+  const response = await api.get('/announcements/active')
+  return unwrapArray<Announcement>(response.data, ['announcements'])
+}
+
+export async function createAnnouncement(payload: AnnouncementWritePayload) {
+  const response = await api.post('/announcements', payload)
+  const data = response.data as Announcement
+  const id = ensureStringId(data?.id, 'announcement')
+  return { ...data, id }
+}
+
+export async function updateAnnouncement(announcementId: string, payload: AnnouncementWritePayload) {
+  const response = await api.patch(`/announcements/${announcementId}`, payload)
+  const data = response.data as Announcement
+  const id = ensureStringId(data?.id ?? announcementId, 'announcement')
+  return { ...data, id }
+}
+
+// ---------------------------------------------------------------------------
+// 선물 / 아이템
+// ---------------------------------------------------------------------------
+
+export interface Gift {
+  id: string
+  name?: string
+  description?: string
+  price?: number
+  isActive?: boolean
+  [key: string]: unknown
+}
+
+export type GiftPayload = Record<string, unknown>
+
+export async function getGifts(params: Record<string, unknown> = {}) {
+  try {
+    const response = await api.get('/gifts', { params })
+    return unwrapArray<Gift>(response.data, ['gifts'])
+  } catch (error) {
+    if (isAxiosError(error) && error.response?.status === 404) {
+      return []
+    }
+    throw error
+  }
+}
+
+export async function createGift(payload: GiftPayload) {
+  const response = await api.post('/gifts', payload)
+  const data = response.data as Gift
+  const id = ensureStringId(data?.id, 'gift')
+  return { ...data, id }
+}
+
+export async function updateGift(giftId: string, payload: GiftPayload) {
+  const response = await api.patch(`/gifts/${giftId}`, payload)
+  const data = response.data as Gift
+  const id = ensureStringId(data?.id ?? giftId, 'gift')
+  return { ...data, id }
+}
+
+export async function deleteGift(giftId: string) {
+  await api.delete(`/gifts/${giftId}`)
 }
