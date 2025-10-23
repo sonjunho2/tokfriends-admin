@@ -25,13 +25,21 @@ interface ChatRoom {
   lastMessageAt: string
 }
 
-interface ReportItem {
+interface SafetyReport {
   id: string
   roomId: string
   reporter: string
   reason: string
   status: 'PENDING' | 'IN_PROGRESS' | 'RESOLVED'
   createdAt: string
+}
+
+interface PolicyRule {
+  id: string
+  name: string
+  description: string
+  enabled: boolean
+  autoAction: string
 }
 
 const ROOMS: ChatRoom[] = [
@@ -93,7 +101,7 @@ const ROOMS: ChatRoom[] = [
   },
 ]
 
-const REPORTS: ReportItem[] = [
+const REPORTS: SafetyReport[] = [
   {
     id: 'REP-1001',
     roomId: 'ROOM003',
@@ -118,6 +126,30 @@ const STATUS_LABEL: Record<ChatRoom['status'], string> = {
   NEEDS_REVIEW: '검토 필요',
 }
 
+const POLICY_RULES: PolicyRule[] = [
+  {
+    id: 'rule-keyword',
+    name: '금칙어 자동 경고',
+    description: 'AI 금칙어 3회 이상 감지 시 24시간 채팅 제한',
+    enabled: true,
+    autoAction: '제한 + 감사 로그 기록',
+  },
+  {
+    id: 'rule-repeat-report',
+    name: '반복 신고 자동 제재',
+    description: '7일 이내 동일 사용자 신고 5건 발생 시 즉시 계정 정지',
+    enabled: true,
+    autoAction: '정지 + 슬랙 #safety-alert 전송',
+  },
+  {
+    id: 'rule-media-scan',
+    name: '첨부 미디어 스캔',
+    description: '이미지·영상 업로드 시 Vision API로 유해성 감지',
+    enabled: false,
+    autoAction: '감지 시 모더레이터 알림',
+  },
+]
+
 const SEGMENT_OPTIONS = [
   { value: 'ALL', label: '전체' },
   { value: 'UNREAD', label: '읽지 않음' },
@@ -127,7 +159,7 @@ const SEGMENT_OPTIONS = [
 
 type SegmentFilter = (typeof SEGMENT_OPTIONS)[number]['value']
 
-export default function ChatOpsPage() {
+export default function ChatsPage() {
   const { toast } = useToast()
   const [rooms, setRooms] = useState(ROOMS)
   const [segment, setSegment] = useState<SegmentFilter>('ALL')
@@ -135,6 +167,8 @@ export default function ChatOpsPage() {
   const [selectedRoomId, setSelectedRoomId] = useState<string>(ROOMS[0]?.id ?? '')
   const [cannedResponse, setCannedResponse] = useState('')
   const [allowEntry, setAllowEntry] = useState(true)
+  const [policyRules, setPolicyRules] = useState(POLICY_RULES)
+  const [safetyMemo, setSafetyMemo] = useState('')
 
   const filteredRooms = useMemo(() => {
     return rooms.filter((room) => {
@@ -170,20 +204,20 @@ export default function ChatOpsPage() {
           : room
       )
     )
-    toast({ title: '방 만들기 설정 변경', description: '폴백 여부가 업데이트되었습니다.' })
+    toast({ title: '백업 방 설정', description: 'API 실패 시 폴백 생성 여부가 업데이트되었습니다.' })
   }
 
   const updateStatus = (status: ChatRoom['status']) => {
     if (!selectedRoom) return
     setRooms((prev) => prev.map((room) => (room.id === selectedRoom.id ? { ...room, status } : room)))
-    toast({ title: '상태 변경', description: `${STATUS_LABEL[status]}으로 표시되었습니다.` })
+    toast({ title: '대화방 상태 변경', description: `${STATUS_LABEL[status]} 상태로 기록되었습니다.` })
   }
 
   const sendAnnouncement = () => {
     if (!selectedRoom) return
     toast({
-      title: '운영 공지 발송',
-      description: `${selectedRoom.title}에 운영자 공지를 게시했습니다.`,
+      title: '안전 공지 발송',
+      description: `${selectedRoom.title}에 안전 공지를 게시했습니다.`,
     })
     setCannedResponse('')
   }
@@ -191,8 +225,16 @@ export default function ChatOpsPage() {
   const escalateReport = (reportId: string) => {
     toast({
       title: '신고 이관',
-      description: `${reportId} 번 신고를 커뮤니티 제재 프로세스로 이동했습니다.`,
+      description: `${reportId} 번 신고를 안전 감사 큐로 이관했습니다.`,
     })
+  }
+
+    const togglePolicyRule = (id: string) => {
+    setPolicyRules((prev) => prev.map((rule) => (rule.id === id ? { ...rule, enabled: !rule.enabled } : rule)))
+  }
+
+  const runPolicySync = () => {
+    toast({ title: '정책 동기화', description: '최신 룰 구성으로 자동 제재 로직을 갱신했습니다.' })
   }
 
   return (
@@ -200,9 +242,9 @@ export default function ChatOpsPage() {
       <section className="space-y-4">
         <Card>
           <CardHeader>
-            <CardTitle>대화방 세그먼트 모니터링</CardTitle>
+            <CardTitle>실시간 채팅 세그먼트</CardTitle>
             <p className="text-sm text-muted-foreground">
-              전체/읽지 않음/신규/즐겨찾기 세그먼트와 지역·거리·미확인 메시지를 기반으로 상담사가 즉시 진입할 수 있습니다.
+              읽지 않은 메시지, 신규 대화, 즐겨찾기 방을 한 곳에서 파악하고 긴급 대응이 필요한 방을 식별합니다.
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -293,9 +335,9 @@ export default function ChatOpsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>신고/차단 현황</CardTitle>
+            <CardTitle>신고 큐 & 안전 대응</CardTitle>
             <p className="text-sm text-muted-foreground">
-              커뮤니티 신고 API와 연동하여 신고/차단 요청을 분류하고, 상담사가 바로 처리할 수 있도록 지원합니다.
+              신고 접수 건을 SLA 기준으로 분류하고, 상담사가 제재 이력을 남길 수 있도록 합니다.
             </p>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -316,7 +358,7 @@ export default function ChatOpsPage() {
                     {report.status === 'PENDING' ? '미처리' : report.status === 'IN_PROGRESS' ? '처리 중' : '완료'}
                   </span>
                   <Button size="sm" variant="outline" onClick={() => escalateReport(report.id)}>
-                    신고 처리
+                    조치 기록 열기
                   </Button>
                 </div>
               </div>
@@ -329,9 +371,9 @@ export default function ChatOpsPage() {
       <section className="space-y-4">
         <Card>
           <CardHeader>
-            <CardTitle>채팅방 운영 도구</CardTitle>
+            <CardTitle>채팅 & 안전 제어 패널</CardTitle>
             <p className="text-sm text-muted-foreground">
-              상담사가 직접 채팅에 참여하거나, 방 제목/카테고리를 수정하고, 신고 모달을 통해 백엔드 API 호출을 준비합니다.
+              상담사 진입, 방 메타데이터 수정, 안전 공지 발송 등 실시간 운영 도구를 제공합니다.
             </p>
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
@@ -471,6 +513,50 @@ export default function ChatOpsPage() {
             )}
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>자동 정책 & 감사 로그</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              키워드 감지, 반복 신고, 미디어 스캔 등 자동 정책을 제어하고 메모를 남깁니다.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {policyRules.map((rule) => (
+              <div key={rule.id} className="rounded-md border p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold">{rule.name}</p>
+                    <p className="text-xs text-muted-foreground">{rule.description}</p>
+                  </div>
+                  <Switch checked={rule.enabled} onCheckedChange={() => togglePolicyRule(rule.id)} />
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">조치: {rule.autoAction}</p>
+              </div>
+            ))}
+            <Textarea
+              value={safetyMemo}
+              onChange={(event) => setSafetyMemo(event.target.value)}
+              rows={3}
+              placeholder="정책 변경 배경이나 추가 조치 메모를 기록하세요."
+            />
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" onClick={runPolicySync}>
+                정책 동기화
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setSafetyMemo('')
+                  toast({ title: '메모 초기화' })
+                }}
+              >
+                메모 초기화
+              </Button>
+            </div>
+          </CardContent>
+        </Card>        
       </section>
     </div>
   )
