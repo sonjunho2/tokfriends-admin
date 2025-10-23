@@ -1,98 +1,42 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/components/ui/use-toast'
-
-interface AdminNote {
-  id: string
-  author: string
-  body: string
-  createdAt: string
-}
-
-type UserStatus = 'ACTIVE' | 'PENDING_VERIFICATION' | 'UNDER_REVIEW' | 'SUSPENDED'
-type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH'
-
-type SubscriptionTier = 'FREE' | 'PLUS' | 'PREMIUM'
-
-interface DirectoryUser {
-  id: string
-  email: string
-  nickname: string
-  status: UserStatus
-  joinedAt: string
-  lastActiveAt?: string
-  region?: string
-  subscription: SubscriptionTier
-  marketingOptIn: boolean
-  verified: boolean
-  riskLevel: RiskLevel
-  aiTags: string[]
-  segments: string[]
-  supportTickets: number
-  banExpiresAt?: string
-  bio?: string
-  notes: AdminNote[]
-}
-
-const STATUS_LABEL: Record<UserStatus, string> = {
-  ACTIVE: '활성',
-  PENDING_VERIFICATION: '인증 대기',
-  UNDER_REVIEW: '검토 필요',
-  SUSPENDED: '정지',
-}
-
-const STATUS_CLASS: Record<UserStatus, string> = {
-  ACTIVE: 'bg-emerald-100 text-emerald-700',
-  PENDING_VERIFICATION: 'bg-blue-100 text-blue-700',
-  UNDER_REVIEW: 'bg-amber-100 text-amber-700',
-  SUSPENDED: 'bg-red-100 text-red-700',
-}
+import {
+  getUserById,
+  searchUsers,
+  updateUserProfile,
+  type UserDetail,
+  type UserSearchParams,
+  type UserSummary,
+} from '@/lib/api'
+import type { AxiosError } from 'axios'
 
 const STATUS_OPTIONS = [
   { value: 'ALL', label: '전체' },
-  { value: 'ACTIVE', label: STATUS_LABEL.ACTIVE },
-  { value: 'PENDING_VERIFICATION', label: STATUS_LABEL.PENDING_VERIFICATION },
-  { value: 'UNDER_REVIEW', label: STATUS_LABEL.UNDER_REVIEW },
-  { value: 'SUSPENDED', label: STATUS_LABEL.SUSPENDED },
+  { value: 'ACTIVE', label: '활성' },
+  { value: 'PENDING_VERIFICATION', label: '인증 대기' },
+  { value: 'UNDER_REVIEW', label: '검토 필요' },
+  { value: 'SUSPENDED', label: '정지' },
 ] as const
 
 type StatusFilter = (typeof STATUS_OPTIONS)[number]['value']
 
-const RISK_LABEL: Record<RiskLevel, string> = {
-  LOW: 'Low',
-  MEDIUM: 'Medium',
-  HIGH: 'High',
-}
-
-const RISK_CLASS: Record<RiskLevel, string> = {
-  LOW: 'bg-emerald-100 text-emerald-700',
-  MEDIUM: 'bg-amber-100 text-amber-700',
-  HIGH: 'bg-red-100 text-red-700',
-}
-
-const SUBSCRIPTION_LABEL: Record<SubscriptionTier, string> = {
-  FREE: 'Free',
-  PLUS: 'Plus',
-  PREMIUM: 'Premium',
-}
-
-const DIRECTORY_USERS: DirectoryUser[] = [
+const FALLBACK_USERS: UserSummary[] = [
   {
     id: 'USR-101',
     email: 'hana@example.com',
     nickname: '하나',
     status: 'ACTIVE',
-    joinedAt: '2024-01-04',
-    lastActiveAt: '2024-03-14 11:22',
+    createdAt: '2024-01-04T00:00:00+09:00',
+    lastActiveAt: '2024-03-14T11:22:00+09:00',
     region: '서울 강남구',
     subscription: 'PLUS',
     marketingOptIn: false,
@@ -103,7 +47,12 @@ const DIRECTORY_USERS: DirectoryUser[] = [
     supportTickets: 1,
     bio: '마케팅 기획자, 주말엔 요리를 좋아해요.',
     notes: [
-      { id: 'note-1', author: '민아', body: '지난주 환불 처리. 재발 방지 모니터링 중.', createdAt: '2024-03-08 15:41' },
+      {
+        id: 'note-1',
+        author: '민아',
+        body: '지난주 환불 처리. 재발 방지 모니터링 중.',
+        createdAt: '2024-03-08T15:41:00+09:00',
+      },
     ],
   },
   {
@@ -111,8 +60,8 @@ const DIRECTORY_USERS: DirectoryUser[] = [
     email: 'minsu@example.com',
     nickname: '민수',
     status: 'UNDER_REVIEW',
-    joinedAt: '2023-12-20',
-    lastActiveAt: '2024-03-13 20:05',
+    createdAt: '2023-12-20T00:00:00+09:00',
+    lastActiveAt: '2024-03-13T20:05:00+09:00',
     region: '부산 해운대구',
     subscription: 'FREE',
     marketingOptIn: true,
@@ -123,7 +72,12 @@ const DIRECTORY_USERS: DirectoryUser[] = [
     supportTickets: 3,
     bio: '등산과 부산 맛집 탐방을 좋아합니다.',
     notes: [
-      { id: 'note-2', author: '지훈', body: '신고 2건(언어/스팸). 경고 후 모니터링 중.', createdAt: '2024-03-12 10:22' },
+         {
+        id: 'note-2',
+        author: '지훈',
+        body: '신고 2건(언어/스팸). 경고 후 모니터링 중.',
+        createdAt: '2024-03-12T10:22:00+09:00',
+      },
     ],
   },
   {
@@ -131,17 +85,20 @@ const DIRECTORY_USERS: DirectoryUser[] = [
     email: 'sujin@example.com',
     nickname: '수진',
     status: 'PENDING_VERIFICATION',
-    joinedAt: '2024-03-11',
-    subscription: 'FREE',
+    createdAt: '2024-03-11T00:00:00+09:00',
     marketingOptIn: false,
     verified: false,
     riskLevel: 'LOW',
     aiTags: ['needs_verification'],
     segments: ['서울-신규'],
     supportTickets: 0,
-    banExpiresAt: undefined,
     notes: [
-      { id: 'note-3', author: '도윤', body: '휴대폰 인증 대기. 재전송 완료.', createdAt: '2024-03-14 09:02' },
+       {
+        id: 'note-3',
+        author: '도윤',
+        body: '휴대폰 인증 대기. 재전송 완료.',
+        createdAt: '2024-03-14T09:02:00+09:00',
+      },
     ],
   },
   {
@@ -149,8 +106,8 @@ const DIRECTORY_USERS: DirectoryUser[] = [
     email: 'jay@example.com',
     nickname: '제이',
     status: 'SUSPENDED',
-    joinedAt: '2023-09-02',
-    lastActiveAt: '2024-02-27 18:40',
+    createdAt: '2023-09-02T00:00:00+09:00',
+    lastActiveAt: '2024-02-27T18:40:00+09:00',
     region: '대구 수성구',
     subscription: 'PREMIUM',
     marketingOptIn: true,
@@ -159,174 +116,295 @@ const DIRECTORY_USERS: DirectoryUser[] = [
     aiTags: ['payment_chargeback'],
     segments: ['리스크감지'],
     supportTickets: 5,
-    banExpiresAt: '2024-03-21',
+    banExpiresAt: '2024-03-21T00:00:00+09:00',
     notes: [
-      { id: 'note-4', author: '승아', body: '결제 분쟁으로 14일 정지. 카드사 회신 대기.', createdAt: '2024-03-07 13:10' },
+      {
+        id: 'note-4',
+        author: '승아',
+        body: '결제 분쟁으로 14일 정지. 카드사 회신 대기.',
+        createdAt: '2024-03-07T13:10:00+09:00',
+      },
     ],
   },
 ]
 
+const FALLBACK_DETAIL_MAP = new Map(FALLBACK_USERS.map((user) => [user.id, user]))
+
+function normalizeDate(value?: string) {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+  return date.toLocaleString()
+}
+
+function buildPatchObject(user: UserDetail | null) {
+  if (!user) return {}
+  const patch: Record<string, unknown> = {}
+  if (typeof user.nickname === 'string') patch.nickname = user.nickname
+  if (typeof user.status === 'string') patch.status = user.status
+  if (typeof user.memo === 'string') patch.memo = user.memo
+  if (typeof user.marketingOptIn === 'boolean') patch.marketingOptIn = user.marketingOptIn
+  if (typeof (user as any).bio === 'string') patch.bio = (user as any).bio
+  if (typeof (user as any).introduction === 'string') patch.introduction = (user as any).introduction
+  return patch
+}
+
+function buildPatchDraft(user: UserDetail | null) {
+  const patch = buildPatchObject(user)
+  const keys = Object.keys(patch)
+  if (keys.length === 0) {
+    return '{\n  \n}'
+  }
+  return JSON.stringify(patch, null, 2)
+}
+
 export default function UsersPage() {
   const { toast } = useToast()
-  const [users, setUsers] = useState<DirectoryUser[]>(DIRECTORY_USERS)
-  const [search, setSearch] = useState('')
+
+  const [searchKeyword, setSearchKeyword] = useState('')
+  const [searchEmail, setSearchEmail] = useState('')
+  const [searchNickname, setSearchNickname] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
-  const [selectedUserId, setSelectedUserId] = useState<string>(DIRECTORY_USERS[0]?.id ?? '')
-  const [noteDraft, setNoteDraft] = useState('')
 
-  const filteredUsers = useMemo(() => {
-    return users.filter((user) => {
-      const keyword = search.trim().toLowerCase()
-      const matchesKeyword =
-        keyword.length === 0 ||
-        user.email.toLowerCase().includes(keyword) ||
-        user.nickname.toLowerCase().includes(keyword)
-      const matchesStatus = statusFilter === 'ALL' || user.status === statusFilter
-      return matchesKeyword && matchesStatus
-    })
-  }, [users, search, statusFilter])
+  const [users, setUsers] = useState<UserSummary[]>(FALLBACK_USERS)
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(FALLBACK_USERS[0]?.id ?? null)
+  const [userDetail, setUserDetail] = useState<UserDetail | null>(
+    selectedUserId ? (FALLBACK_DETAIL_MAP.get(selectedUserId) as UserDetail | undefined) ?? null : null
+  )
 
-  const selectedUser = useMemo(() => {
-    const fromList = filteredUsers.find((user) => user.id === selectedUserId)
-    if (fromList) return fromList
-    return filteredUsers[0]
-  }, [filteredUsers, selectedUserId])
+  const [isSearching, setIsSearching] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [patchDraft, setPatchDraft] = useState(() => buildPatchDraft(userDetail))
 
-  const updateSelectedUser = (payload: Partial<DirectoryUser>) => {
-    if (!selectedUser) return
-    setUsers((prev) =>
-      prev.map((user) => (user.id === selectedUser.id ? { ...user, ...payload } : user))
-    )
+  const visibleUsers = useMemo(() => {
+    if (statusFilter === 'ALL') return users
+    return users.filter((user) => user.status?.toUpperCase() === statusFilter)
+  }, [users, statusFilter])
+
+  useEffect(() => {
+    void performSearch(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function performSearch(initial = false) {
+    const params: UserSearchParams = {}
+    if (searchKeyword.trim()) params.query = searchKeyword.trim()
+    if (searchEmail.trim()) params.email = searchEmail.trim()
+    if (searchNickname.trim()) params.nickname = searchNickname.trim()
+    if (statusFilter !== 'ALL') params.status = statusFilter
+
+    setIsSearching(true)
+    try {
+      const results = await searchUsers(params)
+      const normalized = results.map((user, index) => ({
+        ...user,
+        id: typeof user.id === 'string' && user.id.trim().length > 0 ? user.id : `user-${index}`,
+      }))
+      if (normalized.length === 0) {
+        if (!initial) {
+          toast({ title: '검색 결과 없음', description: '조건에 해당하는 사용자가 없습니다.' })
+          setUsers([])
+          setSelectedUserId(null)
+          setUserDetail(null)
+          setPatchDraft('{\n  \n}')
+        } else {
+          setUsers(FALLBACK_USERS)
+          const fallbackId = FALLBACK_USERS[0]?.id ?? null
+          setSelectedUserId(fallbackId)
+          const fallbackDetail = fallbackId
+            ? (FALLBACK_DETAIL_MAP.get(fallbackId) as UserDetail | undefined) ?? null
+            : null
+          setUserDetail(fallbackDetail)
+          setPatchDraft(buildPatchDraft(fallbackDetail))
+        }
+        return
+      }
+
+      setUsers(normalized)
+      if (normalized.length > 0) {
+        const firstId = normalized[0]?.id
+        if (firstId) {
+          setSelectedUserId(firstId)
+          await loadUserDetail(firstId, { silent: true })
+        }
+      }
+    } catch (error) {
+      const ax = error as AxiosError | undefined
+      const message = (ax?.response?.data as any)?.message || ax?.message || '사용자 검색에 실패했습니다.'
+      toast({
+        title: 'API 검색 실패',
+        description: Array.isArray(message) ? message.join(', ') : String(message),
+        variant: 'destructive',
+      })
+      setUsers(FALLBACK_USERS)
+      const fallbackId = FALLBACK_USERS[0]?.id ?? null
+      setSelectedUserId(fallbackId)
+      const fallbackDetail = fallbackId ? (FALLBACK_DETAIL_MAP.get(fallbackId) as UserDetail | undefined) ?? null : null
+      setUserDetail(fallbackDetail)
+      setPatchDraft(buildPatchDraft(fallbackDetail))
+    } finally {
+      setIsSearching(false)
+    }
   }
 
-  const changeStatus = (status: UserStatus) => {
-    if (!selectedUser) return
-    const banExpiresAt = status === 'SUSPENDED' ? '2024-03-21' : undefined
-    updateSelectedUser({ status, banExpiresAt })
-    toast({ title: '상태 변경', description: `${selectedUser.nickname}님의 상태가 ${STATUS_LABEL[status]}로 업데이트되었습니다.` })
+  async function loadUserDetail(userId: string, options: { silent?: boolean } = {}) {
+    if (!userId) return
+    if (!options.silent) {
+      setDetailLoading(true)
+    }
+    try {
+      const detail = await getUserById(userId)
+      setUserDetail(detail)
+      setPatchDraft(buildPatchDraft(detail))
+    } catch (error) {
+      const ax = error as AxiosError | undefined
+      const message = (ax?.response?.data as any)?.message || ax?.message || '사용자 정보를 불러오지 못했습니다.'
+      const fallbackDetail = (FALLBACK_DETAIL_MAP.get(userId) as UserDetail | undefined) ?? null
+      setUserDetail(fallbackDetail)
+      setPatchDraft(buildPatchDraft(fallbackDetail))
+      toast({
+        title: '사용자 조회 실패',
+        description: Array.isArray(message) ? message.join(', ') : String(message),
+        variant: 'destructive',
+      })
+    } finally {
+      if (!options.silent) {
+        setDetailLoading(false)
+      }
+    }
   }
 
-  const toggleSegment = (segment: string) => {
-    if (!selectedUser) return
-    const hasSegment = selectedUser.segments.includes(segment)
-    const segments = hasSegment
-      ? selectedUser.segments.filter((item) => item !== segment)
-      : [...selectedUser.segments, segment]
-    updateSelectedUser({ segments })
-  }
-
-  const appendNote = () => {
-    if (!selectedUser || !noteDraft.trim()) {
-      toast({ title: '메모 입력 필요', description: '메모 내용을 작성해주세요.', variant: 'destructive' })
+  async function handlePatchSubmit() {
+    if (!selectedUserId) {
+      toast({ title: '선택된 사용자 없음', description: '먼저 목록에서 사용자를 선택해주세요.' })
       return
     }
-    const note: AdminNote = {
-      id: `note-${Date.now()}`,
-      author: '운영자',
-      body: noteDraft.trim(),
-      createdAt: new Date().toLocaleString('ko-KR'),
+    
+    let payload: Record<string, unknown>
+    try {
+      payload = JSON.parse(patchDraft || '{}')
+    } catch (error) {
+      toast({ title: 'JSON 파싱 오류', description: 'PATCH payload 형식이 올바른지 확인해주세요.', variant: 'destructive' })
+      return
     }
-    updateSelectedUser({ notes: [note, ...(selectedUser.notes ?? [])] })
-    setNoteDraft('')
-    toast({ title: '메모 추가됨', description: '내부 메모가 기록되었습니다.' })
+
+    setIsSaving(true)
+    try {
+      const updated = await updateUserProfile(selectedUserId, payload)
+      setUserDetail(updated)
+      setUsers((prev) => prev.map((user) => (user.id === updated.id ? { ...user, ...updated } : user)))
+      setPatchDraft(buildPatchDraft(updated))
+      toast({ title: '프로필 업데이트 완료', description: '변경 사항이 저장되었습니다.' })
+    } catch (error) {
+      const ax = error as AxiosError | undefined
+      const message = (ax?.response?.data as any)?.message || ax?.message || '프로필 업데이트에 실패했습니다.'
+      toast({
+        title: '업데이트 실패',
+        description: Array.isArray(message) ? message.join(', ') : String(message),
+        variant: 'destructive',
+      })
+    } finally {
+      setIsSaving(false)
+    }
   }
 
-  const sendVerification = () => {
-    if (!selectedUser) return
-    toast({ title: '인증 메일 재전송', description: `${selectedUser.email} 주소로 재전송했습니다.` })
-  }
-
-  const sendPasswordReset = () => {
-    if (!selectedUser) return
-    toast({ title: '비밀번호 초기화', description: `${selectedUser.email}로 초기화 링크를 발송했습니다.` })
-  }
-
-  const escalateCase = () => {
-    if (!selectedUser) return
-    toast({ title: '에스컬레이션', description: '안전 담당자에게 케이스를 전달했습니다.' })
-  }
+    const selectedDetail = userDetail
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[2fr_3fr]">
+    <div className="grid gap-6 xl:grid-cols-[2fr_3fr]">
       <section className="space-y-4">
         <Card>
           <CardHeader>
-            <CardTitle>사용자 디렉토리</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              검색과 상태 필터를 활용해 운영 대상 사용자를 빠르게 찾아보세요.
-            </p>
+            <CardTitle>사용자 검색</CardTitle>
+            <p className="text-sm text-muted-foreground">이메일, 닉네임, 상태로 필터링하여 백엔드 `GET /users/search`와 연동합니다.</p>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex flex-col gap-3 lg:flex-row">
-              <Input
-                placeholder="이메일 또는 닉네임 검색"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              />
-              <Select value={statusFilter} onValueChange={(value: StatusFilter) => setStatusFilter(value)}>
-                <SelectTrigger className="w-full lg:w-[180px]">
-                  <SelectValue placeholder="상태 필터" />
-                </SelectTrigger>
-                <SelectContent>
-                  {STATUS_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="user-keyword">키워드</Label>
+                <Input
+                  id="user-keyword"
+                  placeholder="이메일, 닉네임 등"
+                  value={searchKeyword}
+                  onChange={(event) => setSearchKeyword(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="user-email">이메일</Label>
+                <Input id="user-email" value={searchEmail} onChange={(event) => setSearchEmail(event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="user-nickname">닉네임</Label>
+                <Input id="user-nickname" value={searchNickname} onChange={(event) => setSearchNickname(event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="user-status">상태</Label>
+                <Select value={statusFilter} onValueChange={(value: StatusFilter) => setStatusFilter(value)}>
+                  <SelectTrigger id="user-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STATUS_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-
-            <div className="max-h-[500px] overflow-y-auto rounded-md border">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-muted text-left">
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" onClick={() => performSearch()} disabled={isSearching}>
+                {isSearching ? '검색 중...' : '검색'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setSearchKeyword('')
+                  setSearchEmail('')
+                  setSearchNickname('')
+                  setStatusFilter('ALL')
+                  void performSearch()
+                }}
+                disabled={isSearching}
+              >
+                초기화
+              </Button>
+            </div>
+            <div className="rounded-md border">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-muted">
                   <tr>
-                    <th className="px-4 py-2 font-medium">사용자</th>
-                    <th className="px-4 py-2 font-medium">상태</th>
-                    <th className="px-4 py-2 font-medium">구독</th>
-                    <th className="px-4 py-2 font-medium">리스크</th>
-                    <th className="px-4 py-2 font-medium">마지막 활동</th>
+                    <th className="px-3 py-2 font-medium">이메일</th>
+                    <th className="px-3 py-2 font-medium">닉네임</th>
+                    <th className="px-3 py-2 font-medium">상태</th>
+                    <th className="px-3 py-2 font-medium">가입일</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredUsers.map((user) => {
-                    const isActive = user.id === selectedUser?.id
-                    return (
-                      <tr
-                        key={user.id}
-                        className={`cursor-pointer border-t transition hover:bg-accent/40 ${
-                          isActive ? 'bg-accent/60' : ''
-                        }`}
-                        onClick={() => setSelectedUserId(user.id)}
-                      >
-                        <td className="px-4 py-3 align-top">
-                          <div className="flex flex-col">
-                            <span className="font-medium">{user.nickname}</span>
-                            <span className="text-xs text-muted-foreground">{user.email}</span>
-                            <span className="text-xs text-muted-foreground">가입 {user.joinedAt}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 align-top">
-                          <span className={`rounded-full px-2 py-1 text-xs font-semibold ${STATUS_CLASS[user.status]}`}>
-                            {STATUS_LABEL[user.status]}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 align-top text-xs font-medium">{SUBSCRIPTION_LABEL[user.subscription]}</td>
-                        <td className="px-4 py-3 align-top">
-                          <span className={`rounded-full px-2 py-1 text-xs font-semibold ${RISK_CLASS[user.riskLevel]}`}>
-                            {RISK_LABEL[user.riskLevel]}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 align-top text-xs text-muted-foreground">
-                          {user.lastActiveAt ?? '-'}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                  {filteredUsers.length === 0 && (
+                  {visibleUsers.map((user) => (
+                    <tr
+                      key={user.id}
+                      className={`cursor-pointer border-t ${user.id === selectedUserId ? 'bg-accent/50' : 'hover:bg-accent/40'}`}
+                      onClick={() => {
+                        setSelectedUserId(user.id)
+                        void loadUserDetail(user.id)
+                      }}
+                    >
+                      <td className="px-3 py-2 font-medium">{user.email ?? '-'}</td>
+                      <td className="px-3 py-2">{user.nickname ?? '-'}</td>
+                      <td className="px-3 py-2 text-xs uppercase tracking-wide">{user.status ?? '-'}</td>
+                      <td className="px-3 py-2 text-xs text-muted-foreground">{normalizeDate(user.createdAt)}</td>
+                    </tr>
+                  ))}
+                  {visibleUsers.length === 0 && (
                     <tr>
-                      <td className="px-4 py-6 text-center text-muted-foreground" colSpan={5}>
-                        조건에 맞는 사용자가 없습니다.
+                      <td colSpan={4} className="px-3 py-6 text-center text-muted-foreground">
+                        표시할 사용자가 없습니다. 조건을 바꾸고 다시 검색해주세요.
                       </td>
                     </tr>
                   )}
@@ -335,220 +413,80 @@ export default function UsersPage() {
             </div>
           </CardContent>
         </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>제재 & 액션</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              계정 상태 전환, 인증 재전송, 패스워드 초기화 등 주요 운영 액션을 수행합니다.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="default" onClick={() => changeStatus('ACTIVE')} disabled={!selectedUser}>
-                활성화
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => changeStatus('UNDER_REVIEW')} disabled={!selectedUser}>
-                검토 요청
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => changeStatus('PENDING_VERIFICATION')} disabled={!selectedUser}>
-                인증 대기
-              </Button>
-              <Button size="sm" variant="destructive" onClick={() => changeStatus('SUSPENDED')} disabled={!selectedUser}>
-                정지 처리
-              </Button>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" onClick={sendVerification} disabled={!selectedUser}>
-                인증 메일 재전송
-              </Button>
-              <Button size="sm" variant="outline" onClick={sendPasswordReset} disabled={!selectedUser}>
-                비밀번호 재설정 링크
-              </Button>
-              <Button size="sm" variant="secondary" onClick={escalateCase} disabled={!selectedUser}>
-                안전팀 에스컬레이트
-              </Button>
-            </div>
-
-            {selectedUser && (
-              <div className="rounded-md border p-3 text-xs">
-                <p className="font-semibold">현재 상태: {STATUS_LABEL[selectedUser.status]}</p>
-                <p className="mt-1 text-muted-foreground">
-                  고객 문의 {selectedUser.supportTickets}건 · AI 태그 {selectedUser.aiTags.join(', ') || '없음'}
-                </p>
-                {selectedUser.banExpiresAt && (
-                  <p className="mt-1 text-red-600">정지 해제 예정: {selectedUser.banExpiresAt}</p>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </section>
 
       <section className="space-y-4">
         <Card>
-          <CardHeader>
-            <CardTitle>프로필 & 메타데이터</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              닉네임, 지역, 소개 문구를 편집하고 AI 태그/세그먼트를 관리하세요.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {selectedUser ? (
-              <>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label>닉네임</Label>
-                    <Input
-                      value={selectedUser.nickname}
-                      onChange={(event) => updateSelectedUser({ nickname: event.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>이메일</Label>
-                    <Input value={selectedUser.email} disabled />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>활동 지역</Label>
-                    <Input
-                      value={selectedUser.region ?? ''}
-                      onChange={(event) => updateSelectedUser({ region: event.target.value })}
-                      placeholder="예: 서울특별시 강남구"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>구독 플랜</Label>
-                    <Select
-                      value={selectedUser.subscription}
-                      onValueChange={(value: SubscriptionTier) => updateSelectedUser({ subscription: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="FREE">Free</SelectItem>
-                        <SelectItem value="PLUS">Plus</SelectItem>
-                        <SelectItem value="PREMIUM">Premium</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2 md:col-span-2">
-                    <Label>소개</Label>
-                    <Textarea
-                      value={selectedUser.bio ?? ''}
-                      onChange={(event) => updateSelectedUser({ bio: event.target.value })}
-                      rows={3}
-                      placeholder="운영 메모에 활용될 간단한 소개"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>세그먼트</Label>
-                  <div className="flex flex-wrap gap-2 text-xs">
-                    {['VIP', '강남-2030', '부산-취향', '다중신고', '리스크감지'].map((segment) => {
-                      const active = selectedUser.segments.includes(segment)
-                      return (
-                        <button
-                          key={segment}
-                          type="button"
-                          onClick={() => toggleSegment(segment)}
-                          className={`rounded-full border px-3 py-1 transition ${
-                            active ? 'border-primary bg-primary/10 text-primary' : 'border-dashed text-muted-foreground'
-                          }`}
-                        >
-                          {segment}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground">좌측에서 사용자를 선택하면 상세 정보를 편집할 수 있습니다.</p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>권한 & 위험도</CardTitle>
-            <p className="text-sm text-muted-foreground">인증 여부, 마케팅 동의, 리스크 레벨을 제어합니다.</p>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            {selectedUser ? (
-              <>
-                <div className="flex items-center justify-between">
-                  <span>본인 인증 완료</span>
-                  <Switch checked={selectedUser.verified} onCheckedChange={() => updateSelectedUser({ verified: !selectedUser.verified })} />
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>마케팅 정보 수신</span>
-                  <Switch
-                    checked={selectedUser.marketingOptIn}
-                    onCheckedChange={() => updateSelectedUser({ marketingOptIn: !selectedUser.marketingOptIn })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs font-semibold">리스크 레벨</Label>
-                  <Select
-                    value={selectedUser.riskLevel}
-                    onValueChange={(value: RiskLevel) => updateSelectedUser({ riskLevel: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="LOW">Low</SelectItem>
-                      <SelectItem value="MEDIUM">Medium</SelectItem>
-                      <SelectItem value="HIGH">High</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1 text-xs text-muted-foreground">
-                  <p>AI 태그: {selectedUser.aiTags.join(', ') || '없음'}</p>
-                  <p>지원 티켓: {selectedUser.supportTickets}건</p>
-                </div>
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground">선택된 사용자가 없습니다.</p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>내부 메모 & 타임라인</CardTitle>
-            <p className="text-sm text-muted-foreground">사건 경과, 조치 결과를 기록해 팀 간 컨텍스트를 공유합니다.</p>
+          <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle>사용자 상세</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                `GET /users/:id` 응답을 기반으로 상태·메모 등을 검토하고 `PATCH /users/:id`로 갱신합니다.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" onClick={() => selectedUserId && loadUserDetail(selectedUserId)} disabled={!selectedUserId || detailLoading}>
+                {detailLoading ? '불러오는 중...' : '상세 새로고침'}
+              </Button>
+              <Button size="sm" onClick={handlePatchSubmit} disabled={isSaving || !selectedUserId}>
+                {isSaving ? '저장 중...' : '프로필 저장'}
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
-            <Textarea
-              value={noteDraft}
-              onChange={(event) => setNoteDraft(event.target.value)}
-              rows={3}
-              placeholder="내부 메모를 작성하세요."
-              disabled={!selectedUser}
-            />
-            <Button size="sm" onClick={appendNote} disabled={!selectedUser}>
-              메모 추가
-            </Button>
-
-            <div className="space-y-3">
-              {selectedUser?.notes?.length ? (
-                selectedUser.notes.map((note) => (
-                  <div key={note.id} className="rounded-md border p-3">
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{note.author}</span>
-                      <span>{note.createdAt}</span>
-                    </div>
-                    <p className="mt-2 text-sm text-foreground leading-relaxed">{note.body}</p>
+            {selectedDetail ? (
+              <>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div>
+                    <p className="text-xs text-muted-foreground">사용자 ID</p>
+                    <p className="font-semibold">{selectedDetail.id}</p>
                   </div>
-                ))
-              ) : (
-                <p className="text-muted-foreground">등록된 내부 메모가 없습니다.</p>
-              )}
-            </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">이메일</p>
+                    <p className="font-semibold break-all">{selectedDetail.email ?? '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">닉네임</p>
+                    <p className="font-semibold">{selectedDetail.nickname ?? '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">상태</p>
+                    <p className="font-semibold uppercase tracking-wide">{selectedDetail.status ?? '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">가입일</p>
+                    <p className="font-semibold">{normalizeDate(selectedDetail.createdAt)}</p>
+                  </div>
+                   <div>
+                    <p className="text-xs text-muted-foreground">최근 활동</p>
+                    <p className="font-semibold">{normalizeDate((selectedDetail as any).lastActiveAt)}</p>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="user-patch">PATCH Payload (JSON)</Label>
+                  <Textarea
+                    id="user-patch"
+                    rows={10}
+                    value={patchDraft}
+                    onChange={(event) => setPatchDraft(event.target.value)}
+                    placeholder="{\n  \"status\": \"SUSPENDED\"\n}"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    JSON 형식으로 수정할 필드를 입력한 뒤 “프로필 저장” 버튼을 눌러 변경 사항을 적용하세요.
+                  </p>
+                </div>
+
+                <div className="rounded-md border bg-muted/40 p-3">
+                  <p className="text-xs font-medium text-muted-foreground">전체 응답</p>
+                  <pre className="mt-2 max-h-[320px] overflow-auto whitespace-pre-wrap break-words text-xs">
+                    {JSON.stringify(selectedDetail, null, 2)}
+                  </pre>
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">사용자를 선택하면 상세 정보가 표시됩니다.</p>
+            )}
           </CardContent>
         </Card>
       </section>
