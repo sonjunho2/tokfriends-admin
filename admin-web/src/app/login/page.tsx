@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/use-toast'
-import { postForm, saveLoginResult, api } from '@/lib/api'
+import { checkHealth, loginWithEmail, saveLoginResult } from '@/lib/api'
 import type { AxiosError } from 'axios'
 
 export default function LoginPage() {
@@ -20,9 +20,14 @@ export default function LoginPage() {
     let mounted = true
     ;(async () => {
       try {
-        const res = await api.get('/health', { timeout: 5000 })
+        const res = await checkHealth()
         if (!mounted) return
-        setHealth(res?.data?.ok === true || res.status === 200 ? 'ok' : 'bad')
+        const okFlag =
+          (res as any)?.ok === true ||
+          (res as any)?.status === 'ok' ||
+          res === true ||
+          (res as any)?.healthy === true
+        setHealth(okFlag ? 'ok' : 'bad')
       } catch {
         if (!mounted) return
         setHealth('bad')
@@ -59,8 +64,7 @@ export default function LoginPage() {
     setIsLoading(true)
     try {
       // ✅ 백엔드가 실제로 사용하는 단일 엔드포인트
-      const r = await postForm('/auth/login/email', data, { timeout: 8000 })
-      const result: any = r?.data
+      const result = await loginWithEmail(data)
 
       if (result?.token || result?.access_token) {
         saveLoginResult(result)
