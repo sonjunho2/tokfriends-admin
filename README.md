@@ -11,6 +11,20 @@
 - 📝 **감사 로그** (모든 관리 활동 추적)
 - 🌓 **다크/라이트 모드**
 
+## TokFriends 앱 API 연동 지침
+
+모바일 앱과 동일한 백엔드(`tok-friends` API)를 사용하도록 관리자 콘솔을 설계할 때 따라야 할 핵심 원칙입니다.
+
+1. **레포 구조**: 현재 저장소는 모바일 앱과 분리된 관리자 전용 패키지입니다. 필요한 경우 모노레포로 확장하되, 웹/앱 관리 도구는 별도 패키지로 유지합니다.
+2. **인증 흐름**: 로그인 시 모바일 앱과 동일한 `POST /auth/login/email` 엔드포인트를 사용하여 `access_token`을 저장하고, 토큰 만료(401) 시 재로그인을 요구합니다. 【F:admin-web/src/lib/api.ts†L132-L214】【F:admin-web/src/app/login/page.tsx†L15-L113】
+3. **핵심 기능 대응 API**:
+   - 사용자 목록/검색, 상세 조회, 프로필 수정은 각각 `GET /users/search`, `GET /users/:id`, `PATCH /users/:id`를 이용합니다. 이메일·닉네임 필터를 UI에서 제공합니다. 【F:admin-web/src/lib/api.ts†L216-L303】【F:admin-web/src/app/users/page.tsx†L17-L263】
+   - 신고·차단 처리는 `POST /community/report`, `POST /community/block`를 사용하며, 목록 조회가 필요하면 백엔드 확장을 요청합니다. 【F:admin-web/src/lib/api.ts†L305-L329】
+   - 토픽/게시글 운영은 `/topics`, `/topics/:id/posts`, `/posts` 계열 API로 승인·삭제 플로우를 만듭니다. 【F:admin-web/src/lib/api.ts†L331-L377】
+   - 공지·배너는 `GET /announcements/active`, `GET /announcements?isActive=true`를 우선 사용하고, 생성·비활성화가 필요하면 추가 엔드포인트를 정의합니다. 【F:admin-web/src/lib/api.ts†L379-L439】【F:admin-web/src/app/content/page.tsx†L18-L391】
+   - 선물/아이템은 `GET /gifts` 응답(404 시 빈 배열)을 기반으로 목록을 구성하고, 필요한 CRUD 엔드포인트를 정의합니다. 【F:admin-web/src/lib/api.ts†L441-L482】
+4. **운영 수칙**: 관리자 UI 역시 `NEXT_PUBLIC_API_BASE_URL` 환경변수로 API 베이스를 설정하고, 배포 전 `/health` 체크와 토큰 만료 시나리오 QA를 수행합니다. 주요 지표 시각화가 필요하면 백엔드에 통계 엔드포인트를 명시적으로 요청합니다. 【F:admin-web/src/lib/api.ts†L25-L129】【F:admin-web/src/app/login/page.tsx†L24-L53】
+
 ## 기술 스택
 
 - **API (tok‑friends)** : NestJS 10, Prisma ORM, PostgreSQL, JWT 인증, Swagger 문서화
