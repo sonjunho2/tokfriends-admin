@@ -1,6 +1,8 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
+import { PhoneCall } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -316,6 +318,25 @@ export default function UsersPage() {
   return (
     <div className="grid gap-6 xl:grid-cols-[2fr_3fr]">
       <section className="space-y-4">
+                <Card>
+          <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <PhoneCall className="h-4 w-4 text-primary" /> 휴대폰 인증 대시보드
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                OTP 요청 로그, 인증 대기 세션, 수동 가입 완료 기능을 빠르게 확인하세요.
+              </p>
+            </div>
+            <Button asChild size="sm">
+              <Link href="/users/phone-verification">휴대폰 인증 관리 열기</Link>
+            </Button>
+          </CardHeader>
+          <CardContent className="text-xs text-muted-foreground">
+            인증 성공 후 프로필 입력을 완료하지 않은 세션을 만료하거나 재전송·승인 처리할 수 있습니다. 고객센터 대응 중에는 verificationId를 기준으로 검색해 주세요.
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle>사용자 검색</CardTitle>
