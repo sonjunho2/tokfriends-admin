@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -211,6 +212,28 @@ export default function SettingsPage() {
       </section>
 
       <section className="space-y-4">
+                <Card>
+          <CardHeader>
+            <CardTitle>약관 & 정책 관리</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              서비스 약관, 개인정보 처리방침, 위치 기반 서비스 약관의 최신 버전을 관리합니다.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <p>
+              정책 변경 시 사용자 공지, 앱 내 동의 플로우와 정확히 일치하도록 관리자에서 버전과 수정자를 남겨주세요.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button asChild size="sm">
+                <Link href="/settings/legal">약관 관리 화면 열기</Link>
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                최근 개정 이력과 API 반영 상태를 확인할 수 있습니다.
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle>기능 플래그</CardTitle>
