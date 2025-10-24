@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { Inter } from 'next/font/google'
 
 import { AppShell, type AppShellNavItem } from '@/components/layout/app-shell'
 import { ThemeProvider } from '@/components/providers/theme-provider'
@@ -11,7 +10,6 @@ import { getAccessToken } from '@/lib/api'
 
 import './globals.css'
 
-const inter = Inter({ subsets: ['latin'] })
 const PUBLIC_PATHS = ['/login']
 
 const NAV_ITEMS: AppShellNavItem[] = [
@@ -50,7 +48,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   if (isAuthenticated === null) {
     return (
       <html lang="ko" suppressHydrationWarning>
-        <body className={inter.className}>
+        <body className="font-sans">
           <div className="flex min-h-screen items-center justify-center">
             <div className="text-sm text-muted-foreground">콘솔을 준비하고 있습니다…</div>
           </div>
@@ -64,7 +62,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <html lang="ko" suppressHydrationWarning>
-      <body className={inter.className}>
+      <body className="font-sans">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           {isPublicPage ? children : <AppShell items={NAV_ITEMS}>{children}</AppShell>}
           <Toaster />
