@@ -433,3 +433,255 @@ export async function updateGift(giftId: string, payload: GiftPayload) {
 export async function deleteGift(giftId: string) {
   await api.delete(`/gifts/${giftId}`)
 }
+
+// ---------------------------------------------------------------------------
+// 약관 / 정책 문서
+// ---------------------------------------------------------------------------
+
+export interface LegalDocumentVersion {
+  version?: number
+  title?: string
+  body?: string | null
+  updatedAt?: string | null
+  updatedBy?: string | null
+  memo?: string | null
+  [key: string]: unknown
+}
+
+export interface LegalDocument {
+  slug: string
+  title?: string | null
+  body?: string | null
+  updatedAt?: string | null
+  updatedBy?: string | null
+  version?: number | null
+  history?: LegalDocumentVersion[]
+  [key: string]: unknown
+}
+
+export interface LegalDocumentPayload {
+  title: string
+  body: string
+  updatedBy?: string
+  memo?: string
+  [key: string]: unknown
+}
+
+function normalizeVersion(entry: LegalDocumentVersion | undefined, index: number) {
+  if (!entry) return undefined
+  const normalized: LegalDocumentVersion = {
+    ...entry,
+    version: entry.version ?? (entry as any)?.revision ?? (entry as any)?.sequence ?? index + 1,
+    updatedAt: entry.updatedAt ?? (entry as any)?.updated_at ?? (entry as any)?.createdAt ?? null,
+    updatedBy: entry.updatedBy ?? (entry as any)?.updated_by ?? null,
+    memo: entry.memo ?? (entry as any)?.memo ?? (entry as any)?.note ?? (entry as any)?.changelog ?? null,
+  }
+  return normalized
+}
+
+export async function getLegalDocument(slug: string) {
+  try {
+    const response = await api.get(`/legal-documents/${slug}`)
+    const raw = response.data as any
+    const document = (raw?.document ?? raw) as Record<string, unknown>
+    const history = unwrapArray<LegalDocumentVersion>(
+      raw?.history ?? document?.history ?? document?.versions ?? (document as any)?.revisions ?? [],
+      ['history', 'versions', 'revisions']
+    )
+
+    const normalizedHistory = history
+      .map((entry, index) => normalizeVersion(entry, index))
+      .filter((entry): entry is LegalDocumentVersion => Boolean(entry))
+
+    const normalized: LegalDocument = {
+      slug: ensureStringId((document?.slug as string | undefined) ?? slug, 'legal-document'),
+      title: (document?.title as string | undefined) ?? (document?.name as string | undefined) ?? null,
+      body: (document?.body as string | undefined) ?? (document?.content as string | undefined) ?? null,
+      updatedAt:
+        (document?.updatedAt as string | undefined) ??
+        (document?.updated_at as string | undefined) ??
+        (document?.modifiedAt as string | undefined) ??
+        null,
+      updatedBy:
+        (document?.updatedBy as string | undefined) ??
+        (document?.updated_by as string | undefined) ??
+        (document?.editor as string | undefined) ??
+        null,
+      version:
+        (document?.version as number | undefined) ??
+        (document?.latestVersion as number | undefined) ??
+        (document?.revision as number | undefined) ??
+        null,
+      history: normalizedHistory,
+    }
+
+    return normalized
+  } catch (error) {
+    if (isAxiosError(error) && error.response?.status === 404) {
+      return {
+        slug,
+        title: '',
+        body: '',
+        history: [],
+      } as LegalDocument
+    }
+    throw error
+  }
+}
+
+export async function saveLegalDocument(slug: string, payload: LegalDocumentPayload) {
+  const response = await api.put(`/legal-documents/${slug}`, payload)
+  const raw = response.data as any
+  const history = unwrapArray<LegalDocumentVersion>(raw?.history ?? raw?.versions ?? raw?.revisions ?? [], [
+    'history',
+    'versions',
+    'revisions',
+  ])
+
+  const normalizedHistory = history
+    .map((entry, index) => normalizeVersion(entry, index))
+    .filter((entry): entry is LegalDocumentVersion => Boolean(entry))
+
+  const normalized: LegalDocument = {
+    slug: ensureStringId((raw?.slug as string | undefined) ?? slug, 'legal-document'),
+    title: (raw?.title as string | undefined) ?? payload.title,
+    body: (raw?.body as string | undefined) ?? (raw?.content as string | undefined) ?? payload.body,
+    updatedAt: (raw?.updatedAt as string | undefined) ?? (raw?.updated_at as string | undefined) ?? new Date().toISOString(),
+    updatedBy: (raw?.updatedBy as string | undefined) ?? (raw?.updated_by as string | undefined) ?? payload.updatedBy,
+    version:
+      (raw?.version as number | undefined) ??
+      (raw?.latestVersion as number | undefined) ??
+      (raw?.revision as number | undefined) ??
+      (normalizedHistory[0]?.version ?? null),
+    history: normalizedHistory,
+  }
+
+  return normalized
+}
+
+// ---------------------------------------------------------------------------
+// 휴대폰 인증
+// ---------------------------------------------------------------------------
+
+export interface PhoneOtpLog {
+  id?: string
+  phoneNumber: string
+  requestedAt?: string
+  status: 'SUCCESS' | 'FAILED' | string
+  failureReason?: string | null
+  verificationId?: string | null
+  [key: string]: unknown
+}
+
+export interface PhoneVerificationSession {
+  verificationId: string
+  phoneNumber: string
+  lastOtpSentAt?: string | null
+  verifiedAt?: string | null
+  expiresAt?: string | null
+  profileCompleted?: boolean
+  attempts?: number
+  metadata?: Record<string, unknown>
+  [key: string]: unknown
+}
+
+export interface ManualProfileCompletionPayload {
+  verificationId: string
+  nickname?: string
+  note?: string
+  [key: string]: unknown
+}
+
+export async function getPhoneOtpLogs(params: Record<string, unknown> = {}) {
+  const response = await api.get('/verifications/phone/otp-logs', { params })
+  return unwrapArray<PhoneOtpLog>(response.data, ['logs', 'items'])
+}
+
+export async function getPendingPhoneVerifications(params: Record<string, unknown> = {}) {
+  const response = await api.get('/verifications/phone/pending', { params })
+  return unwrapArray<PhoneVerificationSession>(response.data, ['sessions', 'items'])
+}
+
+export function resendPhoneOtp(verificationId: string) {
+  return api.post(`/verifications/phone/${verificationId}/resend`)
+}
+
+export function approvePhoneVerification(verificationId: string) {
+  return api.post(`/verifications/phone/${verificationId}/approve`)
+}
+
+export function expirePhoneVerificationSession(verificationId: string) {
+  return api.post(`/verifications/phone/${verificationId}/expire`)
+}
+
+export function completePhoneVerificationProfile(payload: ManualProfileCompletionPayload) {
+  return api.post('/verifications/phone/manual-complete', payload)
+}
+
+// ---------------------------------------------------------------------------
+// 포인트 상품
+// ---------------------------------------------------------------------------
+
+export interface PointProduct {
+  id: string
+  name?: string
+  points?: number
+  price?: number
+  isRecommended?: boolean
+  isActive?: boolean
+  androidProductId?: string | null
+  iosProductId?: string | null
+  order?: number
+  note?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+  [key: string]: unknown
+}
+
+export interface PointProductPayload {
+  name?: string
+  points?: number
+  price?: number
+  isRecommended?: boolean
+  isActive?: boolean
+  androidProductId?: string | null
+  iosProductId?: string | null
+  order?: number
+  note?: string | null
+  [key: string]: unknown
+}
+
+export interface PointProductOrderInput {
+  id: string
+  order: number
+}
+
+export async function getPointProducts(params: Record<string, unknown> = {}) {
+  const response = await api.get('/store/point-products', { params })
+  return unwrapArray<PointProduct>(response.data, ['items', 'products', 'pointProducts']).map((item) => ({
+    ...item,
+    id: ensureStringId(item?.id, 'point-product'),
+  }))
+}
+
+export async function createPointProduct(payload: PointProductPayload) {
+  const response = await api.post('/store/point-products', payload)
+  const data = response.data as PointProduct
+  const id = ensureStringId(data?.id, 'point-product')
+  return { ...data, id }
+}
+
+export async function updatePointProduct(productId: string, payload: PointProductPayload) {
+  const response = await api.put(`/store/point-products/${productId}`, payload)
+  const data = response.data as PointProduct
+  const id = ensureStringId(data?.id ?? productId, 'point-product')
+  return { ...data, id }
+}
+
+export async function deletePointProduct(productId: string) {
+  await api.delete(`/store/point-products/${productId}`)
+}
+
+export async function syncPointProductOrder(items: PointProductOrderInput[]) {
+  await api.post('/store/point-products/reorder', { items })
+}
