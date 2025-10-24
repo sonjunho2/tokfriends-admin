@@ -313,12 +313,12 @@ export default function UsersPage() {
     }
   }
 
-    const selectedDetail = userDetail
+  const selectedDetail = userDetail;
 
   return (
     <div className="grid gap-6 xl:grid-cols-[2fr_3fr]">
       <section className="space-y-4">
-                <Card>
+        <Card>
           <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <CardTitle className="flex items-center gap-2">
@@ -333,15 +333,18 @@ export default function UsersPage() {
             </Button>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
-            인증 성공 후 프로필 입력을 완료하지 않은 세션을 만료하거나 재전송·승인 처리할 수 있습니다. 고객센터 대응 중에는 verificationId를 기준으로 검색해 주세요.
+            인증 성공 후 프로필 입력을 완료하지 않은 세션을 만료하거나 재전송·승인 처리할 수 있습니다. 고객센터 대응 중에는
+            verificationId를 기준으로 검색해 주세요.
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
             <CardTitle>사용자 검색</CardTitle>
-            <p className="text-sm text-muted-foreground">이메일, 닉네임, 상태로 필터링하여 백엔드 `GET /users/search`와 연동합니다.</p>
-          </CardHeader>
+            <p className="text-sm text-muted-foreground">
+              이메일, 닉네임, 상태로 필터링하여 백엔드 `GET /users/search`와 연동합니다.
+            </p>
+         </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-3 md:grid-cols-2">
               <div className="space-y-2">
@@ -410,7 +413,9 @@ export default function UsersPage() {
                   {visibleUsers.map((user) => (
                     <tr
                       key={user.id}
-                      className={`cursor-pointer border-t ${user.id === selectedUserId ? 'bg-accent/50' : 'hover:bg-accent/40'}`}
+                      className={`cursor-pointer border-t ${
+                        user.id === selectedUserId ? 'bg-accent/50' : 'hover:bg-accent/40'
+                      }`}
                       onClick={() => {
                         setSelectedUserId(user.id)
                         void loadUserDetail(user.id)
@@ -446,7 +451,12 @@ export default function UsersPage() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" onClick={() => selectedUserId && loadUserDetail(selectedUserId)} disabled={!selectedUserId || detailLoading}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => selectedUserId && loadUserDetail(selectedUserId)}
+                disabled={!selectedUserId || detailLoading}
+              >
                 {detailLoading ? '불러오는 중...' : '상세 새로고침'}
               </Button>
               <Button size="sm" onClick={handlePatchSubmit} disabled={isSaving || !selectedUserId}>
@@ -478,7 +488,7 @@ export default function UsersPage() {
                     <p className="text-xs text-muted-foreground">가입일</p>
                     <p className="font-semibold">{normalizeDate(selectedDetail.createdAt)}</p>
                   </div>
-                   <div>
+                  <div>
                     <p className="text-xs text-muted-foreground">최근 활동</p>
                     <p className="font-semibold">{normalizeDate((selectedDetail as any).lastActiveAt)}</p>
                   </div>
@@ -491,10 +501,10 @@ export default function UsersPage() {
                     rows={10}
                     value={patchDraft}
                     onChange={(event) => setPatchDraft(event.target.value)}
-                    placeholder="{\n  \"status\": \"SUSPENDED\"\n}"
+                    placeholder={`{\n  "status": "SUSPENDED"\n}`}
                   />
                   <p className="text-xs text-muted-foreground">
-                    JSON 형식으로 수정할 필드를 입력한 뒤 “프로필 저장” 버튼을 눌러 변경 사항을 적용하세요.
+                    JSON 형식으로 수정할 필드를 입력한 뒤 "프로필 저장" 버튼을 눌러 변경 사항을 적용하세요.
                   </p>
                 </div>
 
