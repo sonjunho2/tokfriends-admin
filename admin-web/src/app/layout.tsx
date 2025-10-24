@@ -22,6 +22,7 @@ const NAV_ITEMS: AppShellNavItem[] = [
   { label: '콘텐츠 & 참여', href: '/content', description: '공지, 캠페인, FAQ 워크플로우 운영' },
   { label: '분석 & 리포트', href: '/analytics', description: '코호트 분석과 데이터 익스포트' },
   { label: '설정', href: '/settings', description: '팀 권한, 기능 플래그, 통합 설정' },
+  { label: '상점', href: '/store', description: '포인트 상품, 구독 및 결제 설정' },
 ]
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
