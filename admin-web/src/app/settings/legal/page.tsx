@@ -72,7 +72,7 @@ const INITIAL_DOCUMENTS: DocumentMap = DOCUMENT_PRESETS.reduce((acc, preset) => 
   return acc
 }, {} as DocumentMap)
 
-function formatDate(value?: string) {
+function formatDate(value?: string | null) {
   if (!value) return '아직 저장되지 않았습니다.'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) {
@@ -179,49 +179,66 @@ export default function LegalDocumentsPage() {
     const doc = documents[slug]
     if (!doc) return
 
-    if (!doc.title.trim()) {
+    const trimmedTitle = doc.title?.trim() ?? ''
+    if (!trimmedTitle) {
       toast({ title: '제목 필요', description: '약관 제목을 입력하세요.', variant: 'destructive' })
       return
     }
-    if (!doc.body.trim()) {
+    const trimmedBody = doc.body?.trim() ?? ''
+    if (!trimmedBody) {
       toast({ title: '본문 필요', description: '약관 본문을 입력하세요.', variant: 'destructive' })
       return
     }
 
+    const normalizedEditorName = doc.editorName?.trim() ?? ''
+    const normalizedUpdatedBy = normalizedEditorName || doc.updatedBy?.trim() || undefined
+    const normalizedMemo = doc.versionMemo?.trim() || undefined
+
     setSavingSlug(slug)
     try {
       const payload = {
-        title: doc.title,
-        body: doc.body,
-        updatedBy: doc.editorName.trim() || doc.updatedBy,
-        memo: doc.versionMemo.trim() || undefined,
+        title: trimmedTitle,
+        body: trimmedBody,
+        updatedBy: normalizedUpdatedBy,
+        memo: normalizedMemo,
       }
       const saved = await saveLegalDocument(slug, payload)
       const nowIso = saved.updatedAt ?? new Date().toISOString()
-      const editorName = payload.updatedBy ?? saved.updatedBy ?? doc.updatedBy
+      const savedUpdatedBy = saved.updatedBy?.trim() || undefined
+      const editorName =
+        normalizedUpdatedBy ?? savedUpdatedBy ?? doc.updatedBy?.trim() ?? null
+      const persistedTitle = saved.title ?? trimmedTitle
+      const persistedBody = saved.body ?? trimmedBody
       const nextVersion = (doc.history?.[0]?.version ?? doc.version ?? 0) + 1
       const nextHistoryEntry: LegalDocumentVersion = {
         version: nextVersion,
-        title: saved.title ?? doc.title,
-        body: saved.body ?? doc.body,
+        title: persistedTitle,
+        body: persistedBody,
         updatedAt: nowIso,
         updatedBy: editorName,
         memo: payload.memo,
       }
 
-      updateDocument(slug, (current) => ({
-        ...current,
-        ...saved,
-        updatedAt: nowIso,
-        updatedBy: editorName,
-        version: nextVersion,
-        editorName: '',
-        versionMemo: '',
-        history: [nextHistoryEntry, ...pickHistory(saved), ...current.history]
+      updateDocument(slug, (current) => {
+        const existingHistory = Array.isArray(current.history) ? current.history : []
+        const mergedHistory = [nextHistoryEntry, ...pickHistory(saved), ...existingHistory]
           .filter((entry, index, arr) => index === arr.findIndex((item) => item.version === entry.version))
           .sort((a, b) => (b.version ?? 0) - (a.version ?? 0))
-          .slice(0, 20),
-      }))
+          .slice(0, 20)
+
+        return {
+          ...current,
+          ...saved,
+          title: persistedTitle,
+          body: persistedBody,
+          updatedAt: nowIso,
+          updatedBy: editorName,
+          version: nextVersion,
+          editorName: '',
+          versionMemo: '',
+          history: mergedHistory,
+        }
+      })
 
       const preset = DOCUMENT_PRESETS.find((item) => item.slug === slug)
       toast({
