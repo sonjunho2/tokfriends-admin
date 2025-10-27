@@ -34,7 +34,7 @@ type StatusFilter = (typeof STATUS_OPTIONS)[number]['value']
 const FALLBACK_USERS: UserSummary[] = [
   {
     id: 'USR-101',
-    email: 'hana@example.com',
+    phoneNumber: '010-3210-1101',
     nickname: '하나',
     status: 'ACTIVE',
     createdAt: '2024-01-04T00:00:00+09:00',
@@ -59,7 +59,7 @@ const FALLBACK_USERS: UserSummary[] = [
   },
   {
     id: 'USR-102',
-    email: 'minsu@example.com',
+    phoneNumber: '010-5624-2202',
     nickname: '민수',
     status: 'UNDER_REVIEW',
     createdAt: '2023-12-20T00:00:00+09:00',
@@ -84,7 +84,7 @@ const FALLBACK_USERS: UserSummary[] = [
   },
   {
     id: 'USR-103',
-    email: 'sujin@example.com',
+    phoneNumber: '010-9932-3303',
     nickname: '수진',
     status: 'PENDING_VERIFICATION',
     createdAt: '2024-03-11T00:00:00+09:00',
@@ -105,7 +105,7 @@ const FALLBACK_USERS: UserSummary[] = [
   },
   {
     id: 'USR-104',
-    email: 'jay@example.com',
+    phoneNumber: '010-4477-4404',
     nickname: '제이',
     status: 'SUSPENDED',
     createdAt: '2023-09-02T00:00:00+09:00',
@@ -166,7 +166,7 @@ export default function UsersPage() {
   const { toast } = useToast()
 
   const [searchKeyword, setSearchKeyword] = useState('')
-  const [searchEmail, setSearchEmail] = useState('')
+  const [searchPhone, setSearchPhone] = useState('')
   const [searchNickname, setSearchNickname] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
 
@@ -194,7 +194,7 @@ export default function UsersPage() {
   async function performSearch(initial = false) {
     const params: UserSearchParams = {}
     if (searchKeyword.trim()) params.query = searchKeyword.trim()
-    if (searchEmail.trim()) params.email = searchEmail.trim()
+    if (searchPhone.trim()) params.phoneNumber = searchPhone.trim()
     if (searchNickname.trim()) params.nickname = searchNickname.trim()
     if (statusFilter !== 'ALL') params.status = statusFilter
 
@@ -342,7 +342,7 @@ export default function UsersPage() {
           <CardHeader>
             <CardTitle>사용자 검색</CardTitle>
             <p className="text-sm text-muted-foreground">
-              이메일, 닉네임, 상태로 필터링하여 백엔드 `GET /users/search`와 연동합니다.
+              휴대폰 번호, 닉네임, 상태로 필터링하여 백엔드 `GET /users/search`와 연동합니다.
             </p>
          </CardHeader>
           <CardContent className="space-y-4">
@@ -351,14 +351,20 @@ export default function UsersPage() {
                 <Label htmlFor="user-keyword">키워드</Label>
                 <Input
                   id="user-keyword"
-                  placeholder="이메일, 닉네임 등"
+                  placeholder="휴대폰 번호, 닉네임 등"
                   value={searchKeyword}
                   onChange={(event) => setSearchKeyword(event.target.value)}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="user-email">이메일</Label>
-                <Input id="user-email" value={searchEmail} onChange={(event) => setSearchEmail(event.target.value)} />
+                <Label htmlFor="user-phone">휴대폰 번호</Label>
+                <Input
+                  id="user-phone"
+                  value={searchPhone}
+                  onChange={(event) => setSearchPhone(event.target.value)}
+                  placeholder="010-1234-5678"
+                  inputMode="tel"
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="user-nickname">닉네임</Label>
@@ -389,7 +395,7 @@ export default function UsersPage() {
                 variant="outline"
                 onClick={() => {
                   setSearchKeyword('')
-                  setSearchEmail('')
+                  setSearchPhone('')
                   setSearchNickname('')
                   setStatusFilter('ALL')
                   void performSearch()
@@ -403,7 +409,7 @@ export default function UsersPage() {
               <table className="w-full text-left text-sm">
                 <thead className="bg-muted">
                   <tr>
-                    <th className="px-3 py-2 font-medium">이메일</th>
+                    <th className="px-3 py-2 font-medium">휴대폰 번호</th>
                     <th className="px-3 py-2 font-medium">닉네임</th>
                     <th className="px-3 py-2 font-medium">상태</th>
                     <th className="px-3 py-2 font-medium">가입일</th>
@@ -421,7 +427,7 @@ export default function UsersPage() {
                         void loadUserDetail(user.id)
                       }}
                     >
-                      <td className="px-3 py-2 font-medium">{user.email ?? '-'}</td>
+                      <td className="px-3 py-2 font-medium">{user.phoneNumber ?? '-'}</td>
                       <td className="px-3 py-2">{user.nickname ?? '-'}</td>
                       <td className="px-3 py-2 text-xs uppercase tracking-wide">{user.status ?? '-'}</td>
                       <td className="px-3 py-2 text-xs text-muted-foreground">{normalizeDate(user.createdAt)}</td>
@@ -473,8 +479,8 @@ export default function UsersPage() {
                     <p className="font-semibold">{selectedDetail.id}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">이메일</p>
-                    <p className="font-semibold break-all">{selectedDetail.email ?? '-'}</p>
+                    <p className="text-xs text-muted-foreground">휴대폰 번호</p>
+                    <p className="font-semibold break-all">{selectedDetail.phoneNumber ?? '-'}</p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">닉네임</p>
