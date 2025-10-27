@@ -1,6 +1,8 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { Loader2, RefreshCcw } from 'lucide-react'
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,179 +11,168 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/components/ui/use-toast'
+import {
+  getChatSafetySnapshot,
+  resolveChatReport,
+  saveChatSafetyMemo,
+  updateChatPolicyRule,
+  updateChatRoom,
+  type ChatPolicyRule,
+  type ChatRoomSummary,
+  type ChatSafetyReport,
+} from '@/lib/api'
+import type { AxiosError } from 'axios'
 
-interface ChatRoom {
-  id: string
-  title: string
-  category: string
-  region: string
-  distanceKm: number
-  unread: number
-  newMessages: number
-  participants: number
-  status: 'ACTIVE' | 'ARCHIVED' | 'NEEDS_REVIEW'
-  isFallback: boolean
-  createdAt: string
-  lastMessageAt: string
+const FALLBACK_SNAPSHOT = {
+  rooms: [
+    {
+      id: 'ROOM001',
+      title: '서울 20대 친목방',
+      category: '친목',
+      region: '서울 강남구',
+      distanceKm: 2,
+      unread: 4,
+      newMessages: 12,
+      participants: 58,
+      status: 'ACTIVE',
+      isFallback: false,
+      createdAt: '2024-03-10 14:22',
+      lastMessageAt: '2024-03-14 11:12',
+    },
+    {
+      id: 'ROOM002',
+      title: '부산 맛집 공유',
+      category: '취향',
+      region: '부산 해운대구',
+      distanceKm: 5,
+      unread: 0,
+      newMessages: 3,
+      participants: 34,
+      status: 'ACTIVE',
+      isFallback: true,
+      createdAt: '2024-03-11 09:10',
+      lastMessageAt: '2024-03-13 22:45',
+    },
+    {
+      id: 'ROOM003',
+      title: '경기 북부 하이킹',
+      category: '액티비티',
+      region: '경기 의정부',
+      distanceKm: 18,
+      unread: 9,
+      newMessages: 21,
+      participants: 42,
+      status: 'NEEDS_REVIEW',
+      isFallback: false,
+      createdAt: '2024-03-08 19:34',
+      lastMessageAt: '2024-03-14 07:02',
+    },
+    {
+      id: 'ROOM004',
+      title: '전북 여행 정보',
+      category: '지역',
+      region: '전북 전주',
+      distanceKm: 62,
+      unread: 2,
+      newMessages: 4,
+      participants: 25,
+      status: 'ARCHIVED',
+      isFallback: false,
+      createdAt: '2024-02-28 08:44',
+      lastMessageAt: '2024-03-02 12:18',
+    },
+  ] satisfies ChatRoomSummary[],
+  reports: [
+    {
+      id: 'REP-1001',
+      roomId: 'ROOM003',
+      reporter: 'hana@example.com',
+      reason: '부적절한 언어 사용',
+      status: 'PENDING',
+      createdAt: '2024-03-14 08:12',
+    },
+    {
+      id: 'REP-1002',
+      roomId: 'ROOM002',
+      reporter: 'minsu@example.com',
+      reason: '홍보성 메시지',
+      status: 'IN_PROGRESS',
+      createdAt: '2024-03-13 15:48',
+    },
+  ] satisfies ChatSafetyReport[],
+  policyRules: [
+    {
+      id: 'rule-keyword',
+      name: '금칙어 자동 경고',
+      description: 'AI 금칙어 3회 이상 감지 시 24시간 채팅 제한',
+      enabled: true,
+      autoAction: '제한 + 감사 로그 기록',
+    },
+    {
+      id: 'rule-repeat-report',
+      name: '반복 신고 자동 제재',
+      description: '7일 이내 동일 사용자 신고 5건 발생 시 즉시 계정 정지',
+      enabled: true,
+      autoAction: '정지 + 슬랙 #safety-alert 전송',
+    },
+    {
+      id: 'rule-media-scan',
+      name: '첨부 미디어 스캔',
+      description: '이미지·영상 업로드 시 Vision API로 유해성 감지',
+      enabled: false,
+      autoAction: '감지 시 모더레이터 알림',
+    },
+  ] satisfies ChatPolicyRule[],
+  memo: '',
 }
 
-interface SafetyReport {
-  id: string
-  roomId: string
-  reporter: string
-  reason: string
-  status: 'PENDING' | 'IN_PROGRESS' | 'RESOLVED'
-  createdAt: string
-}
-
-interface PolicyRule {
-  id: string
-  name: string
-  description: string
-  enabled: boolean
-  autoAction: string
-}
-
-const ROOMS: ChatRoom[] = [
-  {
-    id: 'ROOM001',
-    title: '서울 20대 친목방',
-    category: '친목',
-    region: '서울 강남구',
-    distanceKm: 2,
-    unread: 4,
-    newMessages: 12,
-    participants: 58,
-    status: 'ACTIVE',
-    isFallback: false,
-    createdAt: '2024-03-10 14:22',
-    lastMessageAt: '2024-03-14 11:12',
-  },
-  {
-    id: 'ROOM002',
-    title: '부산 맛집 공유',
-    category: '취향',
-    region: '부산 해운대구',
-    distanceKm: 5,
-    unread: 0,
-    newMessages: 3,
-    participants: 34,
-    status: 'ACTIVE',
-    isFallback: true,
-    createdAt: '2024-03-11 09:10',
-    lastMessageAt: '2024-03-13 22:45',
-  },
-  {
-    id: 'ROOM003',
-    title: '경기 북부 하이킹',
-    category: '액티비티',
-    region: '경기 의정부',
-    distanceKm: 18,
-    unread: 9,
-    newMessages: 21,
-    participants: 42,
-    status: 'NEEDS_REVIEW',
-    isFallback: false,
-    createdAt: '2024-03-08 19:34',
-    lastMessageAt: '2024-03-14 07:02',
-  },
-  {
-    id: 'ROOM004',
-    title: '전북 여행 정보',
-    category: '지역',
-    region: '전북 전주',
-    distanceKm: 62,
-    unread: 2,
-    newMessages: 4,
-    participants: 25,
-    status: 'ARCHIVED',
-    isFallback: false,
-    createdAt: '2024-02-28 08:44',
-    lastMessageAt: '2024-03-02 12:18',
-  },
-]
-
-const REPORTS: SafetyReport[] = [
-  {
-    id: 'REP-1001',
-    roomId: 'ROOM003',
-    reporter: 'hana@example.com',
-    reason: '부적절한 언어 사용',
-    status: 'PENDING',
-    createdAt: '2024-03-14 08:12',
-  },
-  {
-    id: 'REP-1002',
-    roomId: 'ROOM002',
-    reporter: 'minsu@example.com',
-    reason: '홍보성 메시지',
-    status: 'IN_PROGRESS',
-    createdAt: '2024-03-13 15:48',
-  },
-]
-
-const STATUS_LABEL: Record<ChatRoom['status'], string> = {
+const STATUS_LABEL: Record<string, string> = {
   ACTIVE: '운영 중',
   ARCHIVED: '종료',
   NEEDS_REVIEW: '검토 필요',
 }
-
-const POLICY_RULES: PolicyRule[] = [
-  {
-    id: 'rule-keyword',
-    name: '금칙어 자동 경고',
-    description: 'AI 금칙어 3회 이상 감지 시 24시간 채팅 제한',
-    enabled: true,
-    autoAction: '제한 + 감사 로그 기록',
-  },
-  {
-    id: 'rule-repeat-report',
-    name: '반복 신고 자동 제재',
-    description: '7일 이내 동일 사용자 신고 5건 발생 시 즉시 계정 정지',
-    enabled: true,
-    autoAction: '정지 + 슬랙 #safety-alert 전송',
-  },
-  {
-    id: 'rule-media-scan',
-    name: '첨부 미디어 스캔',
-    description: '이미지·영상 업로드 시 Vision API로 유해성 감지',
-    enabled: false,
-    autoAction: '감지 시 모더레이터 알림',
-  },
-]
 
 const SEGMENT_OPTIONS = [
   { value: 'ALL', label: '전체' },
   { value: 'UNREAD', label: '읽지 않음' },
   { value: 'NEW', label: '신규' },
   { value: 'FAVORITE', label: '즐겨찾기' },
-]
+] as const
 
 type SegmentFilter = (typeof SEGMENT_OPTIONS)[number]['value']
 
 export default function ChatsPage() {
   const { toast } = useToast()
-  const [rooms, setRooms] = useState(ROOMS)
+
+  const [isLoading, setIsLoading] = useState(false)
+  const [rooms, setRooms] = useState<ChatRoomSummary[]>(FALLBACK_SNAPSHOT.rooms)
+  const [reports, setReports] = useState<ChatSafetyReport[]>(FALLBACK_SNAPSHOT.reports)
+  const [policyRules, setPolicyRules] = useState<ChatPolicyRule[]>(FALLBACK_SNAPSHOT.policyRules)
   const [segment, setSegment] = useState<SegmentFilter>('ALL')
   const [keyword, setKeyword] = useState('')
-  const [selectedRoomId, setSelectedRoomId] = useState<string>(ROOMS[0]?.id ?? '')
-  const [cannedResponse, setCannedResponse] = useState('')
+  const [selectedRoomId, setSelectedRoomId] = useState<string>(FALLBACK_SNAPSHOT.rooms[0]?.id ?? '')
+  const [cannedMessage, setCannedMessage] = useState('')
   const [allowEntry, setAllowEntry] = useState(true)
-  const [policyRules, setPolicyRules] = useState(POLICY_RULES)
-  const [safetyMemo, setSafetyMemo] = useState('')
+  const [safetyMemo, setSafetyMemo] = useState(FALLBACK_SNAPSHOT.memo)
+  const [initialMemo, setInitialMemo] = useState(FALLBACK_SNAPSHOT.memo)
 
+  const [updatingRoomId, setUpdatingRoomId] = useState<string | null>(null)
+  const [updatingReportId, setUpdatingReportId] = useState<string | null>(null)
+  const [updatingRuleId, setUpdatingRuleId] = useState<string | null>(null)
+  const [savingMemo, setSavingMemo] = useState(false)
+  
   const filteredRooms = useMemo(() => {
     return rooms.filter((room) => {
       const matchKeyword =
         keyword.trim().length === 0 ||
-        room.title.includes(keyword) ||
-        room.region.includes(keyword) ||
-        room.category.includes(keyword)
+        room.title?.includes(keyword) ||
+        room.region?.includes(keyword) ||
+        room.category?.includes(keyword)
 
       let matchSegment = true
-      if (segment === 'UNREAD') matchSegment = room.unread > 0
-      if (segment === 'NEW') matchSegment = room.newMessages > 0
-      if (segment === 'FAVORITE') matchSegment = room.participants > 40
+      if (segment === 'UNREAD') matchSegment = (room.unread ?? 0) > 0
+      if (segment === 'NEW') matchSegment = (room.newMessages ?? 0) > 0
+      if (segment === 'FAVORITE') matchSegment = (room.participants ?? 0) > 40
 
       return matchKeyword && matchSegment
     })
@@ -189,63 +180,201 @@ export default function ChatsPage() {
 
   const selectedRoom = useMemo(() => {
     const found = filteredRooms.find((room) => room.id === selectedRoomId)
-    return found ?? filteredRooms[0]
+    return found ?? filteredRooms[0] ?? null
   }, [filteredRooms, selectedRoomId])
 
-  const toggleFallback = () => {
+  useEffect(() => {
+    if (selectedRoom) {
+      setAllowEntry(Boolean((selectedRoom as Record<string, unknown>).allowEntry ?? true))
+    }
+  }, [selectedRoom])
+
+  useEffect(() => {
+    void loadSnapshot()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function loadSnapshot() {
+    setIsLoading(true)
+    try {
+      const snapshot = await getChatSafetySnapshot()
+      setRooms(snapshot.rooms.length > 0 ? snapshot.rooms : FALLBACK_SNAPSHOT.rooms)
+      setReports(snapshot.reports.length > 0 ? snapshot.reports : FALLBACK_SNAPSHOT.reports)
+      setPolicyRules(snapshot.policyRules.length > 0 ? snapshot.policyRules : FALLBACK_SNAPSHOT.policyRules)
+      setSafetyMemo(snapshot.memo ?? '')
+      setInitialMemo(snapshot.memo ?? '')
+      if (snapshot.rooms.length > 0) {
+        setSelectedRoomId(snapshot.rooms[0].id)
+      }
+    } catch (error) {
+      const ax = error as AxiosError | undefined
+      const message =
+        (ax?.response?.data as any)?.message ||
+        ax?.message ||
+        '채팅 운영 정보를 불러오지 못했습니다. 기본 예시 데이터를 보여드립니다.'
+      toast({
+        title: '채팅 패널 불러오기 실패',
+        description: Array.isArray(message) ? message.join(', ') : String(message),
+        variant: 'destructive',
+      })
+      setRooms(FALLBACK_SNAPSHOT.rooms)
+      setReports(FALLBACK_SNAPSHOT.reports)
+      setPolicyRules(FALLBACK_SNAPSHOT.policyRules)
+      setSafetyMemo(FALLBACK_SNAPSHOT.memo)
+      setInitialMemo(FALLBACK_SNAPSHOT.memo)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const toggleFallback = async (room: ChatRoomSummary) => {
+    setUpdatingRoomId(room.id)
+    try {
+      const updated = await updateChatRoom(room.id, { isFallback: !room.isFallback })
+      setRooms((prev) => prev.map((item) => (item.id === room.id ? { ...item, ...updated } : item)))
+      toast({ title: '폴백 설정 변경', description: `${room.title ?? '대화방'}의 백업 모드가 업데이트되었습니다.` })
+    } catch (error) {
+      const ax = error as AxiosError | undefined
+      const message = (ax?.response?.data as any)?.message || ax?.message || '폴백 상태를 변경하지 못했습니다.'
+      toast({ title: '폴백 설정 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
+    } finally {
+      setUpdatingRoomId(null)
+    }
+  }
+
+  const updateStatus = async (status: NonNullable<ChatRoomSummary['status']>) => {
     if (!selectedRoom) return
-    setRooms((prev) =>
-      prev.map((room) =>
-        room.id === selectedRoom.id
-          ? {
-              ...room,
-              isFallback: !room.isFallback,
-            }
-          : room
-      )
-    )
-    toast({ title: '백업 방 설정', description: 'API 실패 시 폴백 생성 여부가 업데이트되었습니다.' })
+    setUpdatingRoomId(selectedRoom.id)
+    try {
+      const updated = await updateChatRoom(selectedRoom.id, { status })
+      setRooms((prev) => prev.map((room) => (room.id === selectedRoom.id ? { ...room, ...updated } : room)))
+      toast({ title: '대화방 상태 변경', description: `${selectedRoom.title ?? '대화방'} 상태가 업데이트되었습니다.` })
+    } catch (error) {
+      const ax = error as AxiosError | undefined
+      const message = (ax?.response?.data as any)?.message || ax?.message || '대화방 상태를 저장하지 못했습니다.'
+      toast({ title: '상태 변경 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
+    } finally {
+      setUpdatingRoomId(null)
+    }
   }
 
-  const updateStatus = (status: ChatRoom['status']) => {
+  const sendAnnouncement = async () => {
     if (!selectedRoom) return
-    setRooms((prev) => prev.map((room) => (room.id === selectedRoom.id ? { ...room, status } : room)))
-    toast({ title: '대화방 상태 변경', description: `${STATUS_LABEL[status]} 상태로 기록되었습니다.` })
+    if (!cannedMessage.trim()) {
+      toast({ title: '메시지 필요', description: '발송할 안내 문구를 입력해주세요.', variant: 'destructive' })
+      return
+    }
+    setUpdatingRoomId(selectedRoom.id)
+    try {
+      const updated = await updateChatRoom(selectedRoom.id, { cannedMessage: cannedMessage.trim() })
+      setRooms((prev) => prev.map((room) => (room.id === selectedRoom.id ? { ...room, ...updated } : room)))
+      setCannedMessage('')
+      toast({ title: '안전 공지 발송', description: `${selectedRoom.title ?? '대화방'}에 안내 메시지를 전송했습니다.` })
+    } catch (error) {
+      const ax = error as AxiosError | undefined
+      const message = (ax?.response?.data as any)?.message || ax?.message || '안내 메시지를 전송하지 못했습니다.'
+      toast({ title: '공지 발송 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
+    } finally {
+      setUpdatingRoomId(null)
+    }
   }
 
-  const sendAnnouncement = () => {
+  const handleAllowEntryChange = async (value: boolean) => {
     if (!selectedRoom) return
-    toast({
-      title: '안전 공지 발송',
-      description: `${selectedRoom.title}에 안전 공지를 게시했습니다.`,
-    })
-    setCannedResponse('')
+    setAllowEntry(value)
+    setUpdatingRoomId(selectedRoom.id)
+    try {
+      const updated = await updateChatRoom(selectedRoom.id, { allowEntry: value })
+      setRooms((prev) => prev.map((room) => (room.id === selectedRoom.id ? { ...room, ...updated } : room)))
+      toast({
+        title: '입장 설정 변경',
+        description: `${selectedRoom.title ?? '대화방'} 입장 제한이 ${value ? '해제' : '적용'}되었습니다.`,
+      })
+    } catch (error) {
+      const ax = error as AxiosError | undefined
+      const message = (ax?.response?.data as any)?.message || ax?.message || '입장 설정을 변경하지 못했습니다.'
+      toast({ title: '입장 설정 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
+      setAllowEntry(!value)
+    } finally {
+      setUpdatingRoomId(null)
+    }
   }
 
-  const escalateReport = (reportId: string) => {
-    toast({
-      title: '신고 이관',
-      description: `${reportId} 번 신고를 안전 감사 큐로 이관했습니다.`,
-    })
+  const escalateReport = async (report: ChatSafetyReport) => {
+    setUpdatingReportId(report.id)
+    try {
+      const updated = await resolveChatReport(report.id, { action: 'ESCALATE' })
+      setReports((prev) => prev.map((item) => (item.id === report.id ? { ...item, ...updated } : item)))
+      toast({ title: '신고 이관 완료', description: `${report.id}번 신고를 안전 감사 큐로 전달했습니다.` })
+    } catch (error) {
+      const ax = error as AxiosError | undefined
+      const message = (ax?.response?.data as any)?.message || ax?.message || '신고를 이관하지 못했습니다.'
+      toast({ title: '신고 이관 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
+    } finally {
+      setUpdatingReportId(null)
+    }
   }
 
-    const togglePolicyRule = (id: string) => {
-    setPolicyRules((prev) => prev.map((rule) => (rule.id === id ? { ...rule, enabled: !rule.enabled } : rule)))
+  const togglePolicyRule = async (rule: ChatPolicyRule) => {
+    setUpdatingRuleId(rule.id)
+    try {
+      const updated = await updateChatPolicyRule(rule.id, { enabled: !rule.enabled })
+      setPolicyRules((prev) => prev.map((item) => (item.id === rule.id ? { ...item, ...updated } : item)))
+      toast({ title: '정책 활성화 변경', description: `${rule.name ?? '정책'} 상태를 업데이트했습니다.` })
+    } catch (error) {
+      const ax = error as AxiosError | undefined
+      const message = (ax?.response?.data as any)?.message || ax?.message || '정책 상태를 변경하지 못했습니다.'
+      toast({ title: '정책 업데이트 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
+    } finally {
+      setUpdatingRuleId(null)
+    }
   }
 
-  const runPolicySync = () => {
-    toast({ title: '정책 동기화', description: '최신 룰 구성으로 자동 제재 로직을 갱신했습니다.' })
+  const runPolicySync = async () => {
+    setIsLoading(true)
+    try {
+      await Promise.all(policyRules.map((rule) => updateChatPolicyRule(rule.id, { enabled: rule.enabled })))
+      toast({ title: '정책 동기화 완료', description: '자동 제재 규칙 구성이 백엔드와 동기화되었습니다.' })
+    } catch (error) {
+      const ax = error as AxiosError | undefined
+      const message = (ax?.response?.data as any)?.message || ax?.message || '정책 구성을 동기화하지 못했습니다.'
+      toast({ title: '동기화 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
+    } finally {
+      setIsLoading(false)
+    }
   }
 
+  const handleSafetyMemoBlur = async () => {
+    if (safetyMemo.trim() === initialMemo.trim()) return
+    setSavingMemo(true)
+    try {
+      const saved = await saveChatSafetyMemo({ memo: safetyMemo })
+      setInitialMemo(saved ?? '')
+      toast({ title: '안전 메모 저장', description: '팀과 공유할 메모를 저장했습니다.' })
+    } catch (error) {
+      const ax = error as AxiosError | undefined
+      const message = (ax?.response?.data as any)?.message || ax?.message || '메모를 저장하지 못했습니다.'
+      toast({ title: '메모 저장 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
+    } finally {
+      setSavingMemo(false)
+  }
+}
+  
   return (
     <div className="grid gap-6 xl:grid-cols-[3fr_4fr]">
       <section className="space-y-4">
         <Card>
-          <CardHeader>
-            <CardTitle>실시간 채팅 세그먼트</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              읽지 않은 메시지, 신규 대화, 즐겨찾기 방을 한 곳에서 파악하고 긴급 대응이 필요한 방을 식별합니다.
-            </p>
+          <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle>실시간 채팅 세그먼트</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                읽지 않은 메시지와 신규 대화를 한눈에 보고, 누구나 즉시 대응할 수 있도록 정렬된 목록입니다.
+              </p>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => void loadSnapshot()} disabled={isLoading}>
+              {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCcw className="mr-2 h-4 w-4" />}
+              새로고침
+            </Button>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-col gap-3 lg:flex-row">
@@ -281,33 +410,31 @@ export default function ChatsPage() {
                     return (
                       <tr
                         key={room.id}
-                        className={`cursor-pointer border-t transition hover:bg-accent/40 ${
-                          isActive ? 'bg-accent/60' : ''
-                        }`}
+                        className={`cursor-pointer border-t transition hover:bg-accent/40 ${isActive ? 'bg-accent/60' : ''}`}
                         onClick={() => setSelectedRoomId(room.id)}
                       >
                         <td className="px-4 py-3 align-top">
                           <div className="flex flex-col">
-                            <span className="font-semibold">{room.title}</span>
+                            <span className="font-semibold">{room.title ?? '제목 없음'}</span>
                             <span className="text-xs text-muted-foreground">
-                              {room.category} · 참여 {room.participants}명 · 생성 {room.createdAt}
+                              {room.category ?? '카테고리 없음'} · 참여 {room.participants ?? 0}명 · 생성 {room.createdAt ?? '-'}
                             </span>
-                            <span className="text-xs text-muted-foreground">마지막 메시지 {room.lastMessageAt}</span>
+                            <span className="text-xs text-muted-foreground">마지막 메시지 {room.lastMessageAt ?? '-'}</span>                          </div>
                           </div>
                         </td>
                         <td className="px-4 py-3 align-top">
                           <div className="space-y-1 text-xs">
-                            <span>읽지 않음 {room.unread}건</span>
-                            <span>신규 메시지 {room.newMessages}건</span>
+                            <span>읽지 않음 {room.unread ?? 0}건</span>
+                            <span>신규 메시지 {room.newMessages ?? 0}건</span>
                           </div>
                         </td>
                         <td className="px-4 py-3 align-top text-xs">
-                          <div>{room.region}</div>
-                          <div className="text-muted-foreground">약 {room.distanceKm}km</div>
+                          <div>{room.region ?? '-'}</div>
+                          <div className="text-muted-foreground">약 {room.distanceKm ?? 0}km</div>
                         </td>
                         <td className="px-4 py-3 align-top text-xs">
                           <span className="rounded-full bg-primary/10 px-2 py-1 font-semibold text-primary">
-                            {STATUS_LABEL[room.status]}
+                            {STATUS_LABEL[room.status ?? 'ACTIVE'] ?? room.status ?? '미지정'}
                           </span>
                         </td>
                         <td className="px-4 py-3 align-top text-xs">
@@ -316,6 +443,17 @@ export default function ChatsPage() {
                           ) : (
                             <span className="text-muted-foreground">API 성공</span>
                           )}
+                          <div className="mt-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => void toggleFallback(room)}
+                              disabled={updatingRoomId === room.id}
+                            >
+                              {updatingRoomId === room.id && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                              {room.isFallback ? '폴백 해제' : '폴백 전환'}
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     )
@@ -337,33 +475,37 @@ export default function ChatsPage() {
           <CardHeader>
             <CardTitle>신고 큐 & 안전 대응</CardTitle>
             <p className="text-sm text-muted-foreground">
-              신고 접수 건을 SLA 기준으로 분류하고, 상담사가 제재 이력을 남길 수 있도록 합니다.
+              접수된 신고를 확인하고, 필요한 경우 안전 감사팀으로 즉시 이관할 수 있습니다.
             </p>
           </CardHeader>
           <CardContent className="space-y-3">
-            {REPORTS.map((report) => (
+            {reports.map((report) => (
               <div key={report.id} className="rounded-md border p-3 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="font-semibold">#{report.id}</span>
-                  <span className="text-xs text-muted-foreground">{report.createdAt}</span>
+                  <span className="text-xs text-muted-foreground">{report.createdAt ?? '-'}</span>
                 </div>
                 <p className="mt-1 text-muted-foreground">
-                  {report.reason} · 신고자 {report.reporter}
+                  {report.reason ?? '사유 미기재'} · 신고자 {report.reporter ?? '알 수 없음'}
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-                    방 {report.roomId}
-                  </span>
+                  <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">방 {report.roomId}</span>
                   <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
                     {report.status === 'PENDING' ? '미처리' : report.status === 'IN_PROGRESS' ? '처리 중' : '완료'}
                   </span>
-                  <Button size="sm" variant="outline" onClick={() => escalateReport(report.id)}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void escalateReport(report)}
+                    disabled={updatingReportId === report.id}
+                  >
+                    {updatingReportId === report.id && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     조치 기록 열기
                   </Button>
                 </div>
               </div>
             ))}
-            {REPORTS.length === 0 && <p className="text-sm text-muted-foreground">신고 내역이 없습니다.</p>}
+            {reports.length === 0 && <p className="text-sm text-muted-foreground">신고 내역이 없습니다.</p>}
           </CardContent>
         </Card>
       </section>
@@ -373,7 +515,7 @@ export default function ChatsPage() {
           <CardHeader>
             <CardTitle>채팅 & 안전 제어 패널</CardTitle>
             <p className="text-sm text-muted-foreground">
-              상담사 진입, 방 메타데이터 수정, 안전 공지 발송 등 실시간 운영 도구를 제공합니다.
+              상담사 입장 여부, 방 정보 수정, 안전 공지 발송 등 운영자가 자주 사용하는 기능을 모았습니다.
             </p>
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
@@ -384,7 +526,7 @@ export default function ChatsPage() {
                     <Label>방 제목</Label>
                     <Input
                       className="mt-1"
-                      value={selectedRoom.title}
+                      value={selectedRoom.title ?? ''}
                       onChange={(event) =>
                         setRooms((prev) =>
                           prev.map((room) =>
@@ -398,7 +540,7 @@ export default function ChatsPage() {
                     <Label>카테고리</Label>
                     <Input
                       className="mt-1"
-                      value={selectedRoom.category}
+                      value={selectedRoom.category ?? ''}
                       onChange={(event) =>
                         setRooms((prev) =>
                           prev.map((room) =>
@@ -412,7 +554,7 @@ export default function ChatsPage() {
                     <Label>지역</Label>
                     <Input
                       className="mt-1"
-                      value={selectedRoom.region}
+                      value={selectedRoom.region ?? ''}
                       onChange={(event) =>
                         setRooms((prev) =>
                           prev.map((room) =>
@@ -423,140 +565,108 @@ export default function ChatsPage() {
                     />
                   </div>
                   <div>
-                    <Label>거리 (km)</Label>
-                    <Input
-                      className="mt-1"
-                      type="number"
-                      value={selectedRoom.distanceKm}
-                      onChange={(event) =>
-                        setRooms((prev) =>
-                          prev.map((room) =>
-                            room.id === selectedRoom.id
-                              ? { ...room, distanceKm: Number(event.target.value) }
-                              : room
-                          )
-                        )
-                      }
-                    />
+                    <Label>진입 허용</Label>
+                    <div className="mt-2 flex items-center gap-2">
+                      <Switch
+                        checked={allowEntry}
+                        disabled={updatingRoomId === selectedRoom.id}
+                        onCheckedChange={(value) => void handleAllowEntryChange(value)}
+                      />
+                      <span className="text-xs text-muted-foreground">
+                        새로운 사용자가 방에 참여할 수 있도록 허용하거나 일시 차단합니다.
+                      </span>
+                    </div>
                   </div>
                 </div>
 
-                <div className="space-y-3">
-                  <Label className="text-sm font-semibold">방 만들기 폴백</Label>
-                  <div className="flex items-center justify-between">
-                    <span>API 실패 시 로컬 폴백 방 생성 여부</span>
-                    <Switch checked={selectedRoom.isFallback} onCheckedChange={toggleFallback} />
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    실패 시 로컬 폴백을 생성하면 상담사가 즉시 대응할 수 있습니다.
-                  </p>
-                </div>
-
-                <div className="space-y-3">
-                  <Label className="text-sm font-semibold">운영 메시지</Label>
+                <div className="space-y-2">
+                  <Label>안전 공지 / 상담사 안내</Label>
                   <Textarea
-                    value={cannedResponse}
-                    onChange={(event) => setCannedResponse(event.target.value)}
-                    placeholder="안내 메시지, 공지, 신고 안내 등을 입력하세요."
-                    rows={4}
+                    value={cannedMessage}
+                    onChange={(event) => setCannedMessage(event.target.value)}
+                    rows={3}
+                    placeholder="예: 신고 다수 발생, 대화 예절 공지 발송"
                   />
-                  <div className="flex flex-wrap gap-2">
-                    <Button size="sm" onClick={sendAnnouncement}>
-                      공지 발송
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => {
-                        setCannedResponse('신고 감사합니다. 운영팀이 검토 후 조치하겠습니다.')
-                      }}
-                    >
-                      신고 안내 문구 삽입
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setCannedResponse('')}
-                    >
-                      초기화
-                    </Button>
-                  </div>
+                  <Button size="sm" onClick={() => void sendAnnouncement()} disabled={updatingRoomId === selectedRoom.id}>
+                    {updatingRoomId === selectedRoom.id && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    안내 발송
+                  </Button>
                 </div>
 
-                <div className="space-y-3">
-                  <Label className="text-sm font-semibold">운영자 진입 제어</Label>
-                  <div className="flex items-center justify-between">
-                    <span>상담사 즉시 진입 허용</span>
-                    <Switch checked={allowEntry} onCheckedChange={setAllowEntry} />
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    긴급 대응을 위해 상담사의 실시간 진입을 허용/제한합니다.
-                  </p>
+                <div className="space-y-2">
+                  <Label>대화방 상태</Label>
                   <div className="flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      onClick={() => toast({ title: '채팅방 진입', description: '상담사 계정으로 새 탭이 열립니다.' })}
-                    >
-                      상담사 진입
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => updateStatus('NEEDS_REVIEW')}>
-                      검토 필요 처리
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => updateStatus('ARCHIVED')}>
-                      방 종료 처리
-                    </Button>
+                    {(
+                      [
+                        { key: 'ACTIVE', label: '운영 중' },
+                        { key: 'NEEDS_REVIEW', label: '검토 필요' },
+                        { key: 'ARCHIVED', label: '종료' },
+                      ] as const
+                    ).map((option) => (
+                      <Button
+                        key={option.key}
+                        size="sm"
+                        variant={selectedRoom.status === option.key ? 'default' : 'outline'}
+                        onClick={() => void updateStatus(option.key)}
+                        disabled={updatingRoomId === selectedRoom.id}
+                      >
+                        {option.label}
+                      </Button>
+                    ))}
                   </div>
                 </div>
               </>
             ) : (
-              <p className="text-sm text-muted-foreground">좌측 목록에서 대화방을 선택하세요.</p>
+              <p className="text-muted-foreground">먼저 왼쪽 목록에서 대화방을 선택해주세요.</p>
             )}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>자동 정책 & 감사 로그</CardTitle>
+            <CardTitle>자동 정책 & 감사 메모</CardTitle>
             <p className="text-sm text-muted-foreground">
-              키워드 감지, 반복 신고, 미디어 스캔 등 자동 정책을 제어하고 메모를 남깁니다.
+              자동 제재 룰을 손쉽게 켜고 끄며, 동기화 버튼으로 백엔드 정책 엔진과 맞춰주세요. 추가로 남길 메모도 함께 관리합니다.
             </p>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            {policyRules.map((rule) => (
-              <div key={rule.id} className="rounded-md border p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="font-semibold">{rule.name}</p>
-                    <p className="text-xs text-muted-foreground">{rule.description}</p>
+          <CardContent className="space-y-4 text-sm">
+            <div className="space-y-3">
+              {policyRules.map((rule) => (
+                <div key={rule.id} className="rounded-md border p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold">{rule.name ?? '이름 없는 룰'}</p>
+                      <p className="text-xs text-muted-foreground">{rule.description ?? '설명 없음'}</p>
+                      <p className="text-xs text-muted-foreground">자동 조치: {rule.autoAction ?? '-'}</p>
+                    </div>
+                    <Switch
+                      checked={Boolean(rule.enabled)}
+                      disabled={updatingRuleId === rule.id}
+                      onCheckedChange={() => void togglePolicyRule(rule)}
+                    />
                   </div>
-                  <Switch checked={rule.enabled} onCheckedChange={() => togglePolicyRule(rule.id)} />
                 </div>
-                <p className="mt-2 text-xs text-muted-foreground">조치: {rule.autoAction}</p>
-              </div>
-            ))}
-            <Textarea
-              value={safetyMemo}
-              onChange={(event) => setSafetyMemo(event.target.value)}
-              rows={3}
-              placeholder="정책 변경 배경이나 추가 조치 메모를 기록하세요."
-            />
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" onClick={runPolicySync}>
-                정책 동기화
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setSafetyMemo('')
-                  toast({ title: '메모 초기화' })
-                }}
-              >
-                메모 초기화
-              </Button>
+              ))}
+              {policyRules.length === 0 && <p className="text-muted-foreground">등록된 정책이 없습니다.</p>}
+            </div>
+            <Button size="sm" variant="outline" onClick={() => void runPolicySync()} disabled={isLoading}>
+              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              정책 동기화
+            </Button>
+
+            <div className="space-y-2">
+              <Label>안전 운영 메모</Label>
+              <Textarea
+                value={safetyMemo}
+                onChange={(event) => setSafetyMemo(event.target.value)}
+                onBlur={() => void handleSafetyMemoBlur()}
+                rows={4}
+                placeholder="예: 2024-03-14 신고 급증, 19시 이후 전담자 배정 등"
+              />
+              {savingMemo && <p className="text-xs text-muted-foreground">메모를 저장하는 중입니다…</p>}
             </div>
           </CardContent>
-        </Card>        
+        </Card>
       </section>
     </div>
   )
