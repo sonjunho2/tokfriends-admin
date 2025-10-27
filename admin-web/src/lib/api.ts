@@ -899,15 +899,16 @@ export interface MatchQuickFilterPayload {
   [key: string]: unknown
 }
 
-export async function createMatchQuickFilter(payload: MatchQuickFilterPayload) {
+export async function createMatchQuickFilter(payload: MatchQuickFilterPayload): Promise<MatchQuickFilter> {
   const response = await api.post('/matches/quick-filters', payload)
   const normalized = normalizeMatchArray(response.data, ['filters'], (value) => value)[0]
   if (normalized && typeof normalized === 'object') {
+    const raw = normalized as Record<string, unknown>
     return {
-      id: ensureStringId((normalized as Record<string, unknown>).id ?? payload.label, 'match-filter-new'),
-      label: (normalized as Record<string, unknown>).label ?? payload.label,
-      segment: (normalized as Record<string, unknown>).segment ?? payload.segment,
-      description: (normalized as Record<string, unknown>).description ?? payload.description,
+      id: ensureStringId(raw.id ?? payload.label, 'match-filter-new'),
+      label: typeof raw.label === 'string' ? raw.label : payload.label,
+      segment: typeof raw.segment === 'string' ? raw.segment : payload.segment,
+      description: typeof raw.description === 'string' ? raw.description : payload.description,
     }
   }
   return {
