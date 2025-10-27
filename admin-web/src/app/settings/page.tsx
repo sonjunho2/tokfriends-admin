@@ -12,8 +12,9 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/components/ui/use-toast'
 import {
+  createAdminTeamMember,
+  deleteAdminTeamMember,
   getAdminSettingsSnapshot,
-  inviteAdminTeamMember,
   saveAdminAuditMemo,
   updateAdminFeatureFlag,
   updateAdminIntegrationSetting,
@@ -27,9 +28,9 @@ import type { AxiosError } from 'axios'
 
 const FALLBACK_SETTINGS: AdminSettingsSnapshot = {
   members: [
-    { id: 'team-1', email: 'admin@tokfriends.com', role: 'Super Admin', status: '활성', twoFactor: true },
-    { id: 'team-2', email: 'support@tokfriends.com', role: 'Customer Support', status: '활성', twoFactor: true },
-    { id: 'team-3', email: 'safety@tokfriends.com', role: 'Safety Moderator', status: '활성', twoFactor: false },
+    { id: 'team-1', phoneNumber: '010-8000-1001', role: 'Super Admin', status: '활성', twoFactor: true },
+    { id: 'team-2', phoneNumber: '010-8000-1002', role: 'Customer Support', status: '활성', twoFactor: true },
+    { id: 'team-3', phoneNumber: '010-8000-1003', role: 'Safety Moderator', status: '활성', twoFactor: false },
   ],
   featureFlags: [
     {
@@ -69,7 +70,7 @@ export default function SettingsPage() {
   const [members, setMembers] = useState<AdminTeamMember[]>(FALLBACK_SETTINGS.members)
   const [flags, setFlags] = useState<AdminFeatureFlag[]>(FALLBACK_SETTINGS.featureFlags)
   const [integrations, setIntegrations] = useState<AdminIntegrationSetting[]>(FALLBACK_SETTINGS.integrations)
-  const [inviteEmail, setInviteEmail] = useState('')
+  const [manualPhoneNumber, setManualPhoneNumber] = useState('')
   const [auditLog, setAuditLog] = useState(FALLBACK_SETTINGS.auditMemo ?? '')
   const [initialAuditLog, setInitialAuditLog] = useState(FALLBACK_SETTINGS.auditMemo ?? '')
 
@@ -116,21 +117,22 @@ export default function SettingsPage() {
     }
   }
 
-  const inviteMember = async () => {
-    if (!inviteEmail.trim()) {
-      toast({ title: '이메일 필요', description: '초대할 이메일을 입력하세요.', variant: 'destructive' })
+  const createMember = async () => {
+    const phone = manualPhoneNumber.trim()
+    if (!phone) {
+      toast({ title: '휴대폰 번호 필요', description: '추가할 휴대폰 번호를 입력하세요.', variant: 'destructive' })
       return
     }
-    setSavingMemberId('invite')
+    setSavingMemberId('create')
     try {
-      const created = await inviteAdminTeamMember({ email: inviteEmail.trim() })
+      const created = await createAdminTeamMember({ phoneNumber: phone, role: 'Tester', status: '활성' })
       setMembers((prev) => [created, ...prev])
-      setInviteEmail('')
-      toast({ title: '초대 전송', description: `${created.email ?? '새 운영자'}에게 초대 메일을 발송했습니다.` })
+      setManualPhoneNumber('')
+      toast({ title: '계정 추가', description: `${created.phoneNumber ?? phone} 운영자 계정을 생성했습니다.` })
     } catch (error) {
       const ax = error as AxiosError | undefined
-      const message = (ax?.response?.data as any)?.message || ax?.message || '초대 메일을 발송하지 못했습니다.'
-      toast({ title: '초대 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
+      const message = (ax?.response?.data as any)?.message || ax?.message || '운영자 계정을 추가하지 못했습니다.'
+      toast({ title: '추가 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
     } finally {
       setSavingMemberId(null)
     }
@@ -141,7 +143,7 @@ export default function SettingsPage() {
     try {
       const updated = await updateAdminTeamMember(id, { role })
       setMembers((prev) => prev.map((member) => (member.id === id ? { ...member, ...updated } : member)))
-      toast({ title: '역할 변경', description: `${updated.email ?? '팀원'}의 역할을 ${updated.role}로 저장했습니다.` })
+      toast({ title: '역할 변경', description: `${updated.phoneNumber ?? '운영자'}의 역할을 ${updated.role}로 저장했습니다.` })
     } catch (error) {
       const ax = error as AxiosError | undefined
       const message = (ax?.response?.data as any)?.message || ax?.message || '역할을 변경하지 못했습니다.'
@@ -156,7 +158,7 @@ export default function SettingsPage() {
     try {
       const updated = await updateAdminTeamMember(id, { status })
       setMembers((prev) => prev.map((member) => (member.id === id ? { ...member, ...updated } : member)))
-      toast({ title: '상태 변경', description: `${updated.email ?? '팀원'}의 상태를 ${updated.status}로 저장했습니다.` })
+      toast({ title: '상태 변경', description: `${updated.phoneNumber ?? '운영자'}의 상태를 ${updated.status}로 저장했습니다.` })
     } catch (error) {
       const ax = error as AxiosError | undefined
       const message = (ax?.response?.data as any)?.message || ax?.message || '상태를 변경하지 못했습니다.'
@@ -173,12 +175,33 @@ export default function SettingsPage() {
       setMembers((prev) => prev.map((member) => (member.id === id ? { ...member, ...updated } : member)))
       toast({
         title: '2단계 인증 업데이트',
-        description: `${updated.email ?? '팀원'}의 2FA 설정이 ${updated.twoFactor ? '활성화' : '비활성화'}되었습니다.`,
+        description: `${updated.phoneNumber ?? '운영자'}의 2FA 설정이 ${updated.twoFactor ? '활성화' : '비활성화'}되었습니다.`,
       })
     } catch (error) {
       const ax = error as AxiosError | undefined
       const message = (ax?.response?.data as any)?.message || ax?.message || '2FA 상태를 변경하지 못했습니다.'
       toast({ title: '2FA 변경 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
+    } finally {
+      setSavingMemberId(null)
+    }
+  }
+
+  const removeMember = async (id: string, phoneNumber?: string) => {
+    if (typeof window !== 'undefined') {
+      const label = phoneNumber ?? '운영자'
+      if (!window.confirm(`${label} 계정을 삭제하시겠습니까?`)) {
+        return
+      }
+    }
+    setSavingMemberId(id)
+    try {
+      await deleteAdminTeamMember(id)
+      setMembers((prev) => prev.filter((member) => member.id !== id))
+      toast({ title: '계정 삭제', description: `${phoneNumber ?? '운영자'} 계정을 삭제했습니다.` })
+    } catch (error) {
+      const ax = error as AxiosError | undefined
+      const message = (ax?.response?.data as any)?.message || ax?.message || '계정을 삭제하지 못했습니다.'
+      toast({ title: '삭제 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
     } finally {
       setSavingMemberId(null)
     }
@@ -257,7 +280,9 @@ export default function SettingsPage() {
           <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <CardTitle>팀 관리 & 권한</CardTitle>
-              <p className="text-sm text-muted-foreground">역할, 상태, 2FA 여부를 관리하고 신규 팀원을 초대합니다.</p>
+              <p className="text-sm text-muted-foreground">
+                휴대폰 번호 기반의 운영자 계정을 수동으로 추가·삭제하고 역할과 권한을 즉시 조정하세요.
+              </p>
             </div>
             <Button size="sm" variant="outline" onClick={() => void loadSettings()} disabled={isLoading}>
               새로고침
@@ -266,12 +291,13 @@ export default function SettingsPage() {
           <CardContent className="space-y-3 text-sm">
             <div className="flex flex-col gap-2 md:flex-row">
               <Input
-                placeholder="team@tokfriends.com"
-                value={inviteEmail}
-                onChange={(event) => setInviteEmail(event.target.value)}
+                placeholder="010-0000-0000"
+                value={manualPhoneNumber}
+                onChange={(event) => setManualPhoneNumber(event.target.value)}
+                inputMode="tel"
               />
-              <Button size="sm" onClick={() => void inviteMember()} disabled={savingMemberId === 'invite'}>
-                초대 전송
+              <Button size="sm" onClick={() => void createMember()} disabled={savingMemberId === 'create'}>
+                수동 추가
               </Button>
             </div>
 
@@ -279,16 +305,17 @@ export default function SettingsPage() {
               <table className="w-full text-left text-sm">
                 <thead className="sticky top-0 bg-muted">
                   <tr>
-                    <th className="px-3 py-2 font-medium">이메일</th>
+                    <th className="px-3 py-2 font-medium">휴대폰 번호</th>
                     <th className="px-3 py-2 font-medium">역할</th>
                     <th className="px-3 py-2 font-medium">상태</th>
                     <th className="px-3 py-2 font-medium">2FA</th>
+                    <th className="px-3 py-2 font-medium text-right">관리</th>
                   </tr>
                 </thead>
                 <tbody>
                   {members.map((member) => (
                     <tr key={member.id} className="border-t">
-                      <td className="px-3 py-2 font-semibold">{member.email ?? '이메일 미등록'}</td>
+                      <td className="px-3 py-2 font-semibold">{member.phoneNumber ?? '번호 미등록'}</td>
                       <td className="px-3 py-2">
                         <Select
                           value={member.role ?? ''}
@@ -328,6 +355,17 @@ export default function SettingsPage() {
                           disabled={savingMemberId === member.id}
                           onCheckedChange={(value) => void toggleTwoFactor(member.id, value)}
                         />
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-destructive"
+                          onClick={() => void removeMember(member.id, member.phoneNumber)}
+                          disabled={savingMemberId === member.id}
+                        >
+                          삭제
+                        </Button>
                       </td>
                     </tr>
                   ))}
