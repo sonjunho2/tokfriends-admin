@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/use-toast'
-import { checkHealth, loginWithEmail, saveLoginResult } from '@/lib/api'
+import { checkHealth, loginWithPhone, saveLoginResult } from '@/lib/api'
 import type { AxiosError } from 'axios'
 
 export default function LoginPage() {
@@ -48,23 +48,23 @@ export default function LoginPage() {
   }
 
   const handleLoginClick = async () => {
-    const emailInput = document.getElementById('email') as HTMLInputElement | null
+    const phoneInput = document.getElementById('phone') as HTMLInputElement | null
     const passwordInput = document.getElementById('password') as HTMLInputElement | null
 
     const data = {
-      email: emailInput?.value?.trim() || '',
+      phoneNumber: phoneInput?.value?.trim() || '',
       password: passwordInput?.value || '',
     }
 
-    if (!data.email || !data.password) {
-      toast({ title: '입력 오류', description: '이메일과 비밀번호를 입력해주세요.', variant: 'destructive' })
+    if (!data.phoneNumber || !data.password) {
+      toast({ title: '입력 오류', description: '휴대폰 번호와 비밀번호를 입력해주세요.', variant: 'destructive' })
       return
     }
 
     setIsLoading(true)
     try {
       // ✅ 백엔드가 실제로 사용하는 단일 엔드포인트
-      const result = await loginWithEmail(data)
+      const result = await loginWithPhone(data)
 
       if (result?.token || result?.access_token) {
         saveLoginResult(result)
@@ -83,7 +83,7 @@ export default function LoginPage() {
       const serverMsg = (ax?.response?.data as any)?.message
       const msg =
         status === 401
-          ? '이메일 또는 비밀번호가 올바르지 않습니다.'
+          ? '휴대폰 번호 또는 비밀번호가 올바르지 않습니다.'
           : Array.isArray(serverMsg)
           ? serverMsg.join(', ')
           : (serverMsg || ax?.message || '로그인에 실패했습니다.')
@@ -108,8 +108,15 @@ export default function LoginPage() {
         <CardContent>
           <form onSubmit={(e) => e.preventDefault()} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">이메일</Label>
-              <Input id="email" type="email" autoComplete="username" disabled={isLoading} />
+              <Label htmlFor="phone">휴대폰 번호</Label>
+              <Input
+                id="phone"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                placeholder="010-1234-5678"
+                disabled={isLoading}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">비밀번호</Label>
