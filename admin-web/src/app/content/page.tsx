@@ -122,9 +122,9 @@ const INITIAL_CHANNELS: CampaignChannel[] = [
     enabled: true,
   },
   {
-    id: 'channel-email',
-    title: '이메일 뉴스레터',
-    description: '고객지원 이슈 및 리텐션 메일링',
+    id: 'channel-sms',
+    title: 'SMS 캠페인',
+    description: '긴급 공지 및 OTP 재전송용 단문 메시지',
     audience: '휴면/위험',
     enabled: false,
   },
@@ -152,9 +152,9 @@ const FALLBACK_ANNOUNCEMENTS: Announcement[] = normalizeAnnouncements([
 ])
 
 const INITIAL_TICKETS: EngagementTicket[] = [
-  { id: 'ENG-5001', user: 'hana@example.com', category: '문의', status: '대기', createdAt: '2024-03-13 21:44' },
-  { id: 'ENG-5002', user: 'jay@example.com', category: 'FAQ', status: '진행', createdAt: '2024-03-14 09:12' },
-  { id: 'ENG-5003', user: 'minsu@example.com', category: '버그 신고', status: '완료', createdAt: '2024-03-14 08:22' },
+  { id: 'ENG-5001', user: '010-3210-1101', category: '문의', status: '대기', createdAt: '2024-03-13 21:44' },
+  { id: 'ENG-5002', user: '010-4477-4404', category: 'FAQ', status: '진행', createdAt: '2024-03-14 09:12' },
+  { id: 'ENG-5003', user: '010-5624-2202', category: '버그 신고', status: '완료', createdAt: '2024-03-14 08:22' },
 ]
 
 export default function ContentPage() {
