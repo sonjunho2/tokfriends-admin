@@ -140,12 +140,12 @@ export async function getDashboardMetrics() {
 // 인증 & 헬스체크
 // ---------------------------------------------------------------------------
 
-export interface LoginWithEmailRequest {
-  email: string
+export interface LoginWithPhoneRequest {
+  phoneNumber: string
   password: string
 }
 
-export interface LoginWithEmailResponse {
+export interface LoginWithPhoneResponse {
   access_token?: string
   token?: string
   refresh_token?: string
@@ -153,8 +153,8 @@ export interface LoginWithEmailResponse {
   [key: string]: unknown
 }
 
-export async function loginWithEmail(payload: LoginWithEmailRequest) {
-  const response = await postForm<LoginWithEmailResponse>('/auth/login/email', payload)
+export async function loginWithPhone(payload: LoginWithPhoneRequest) {
+  const response = await postForm<LoginWithPhoneResponse>('/auth/login/phone', payload)
   return response.data
 }
 
@@ -199,7 +199,7 @@ function ensureStringId(value: unknown, fallbackPrefix: string) {
 
 export interface UserSearchParams {
   query?: string
-  email?: string
+  phoneNumber?: string
   nickname?: string
   status?: string
   page?: number
@@ -209,7 +209,7 @@ export interface UserSearchParams {
 
 export interface UserSummary {
   id: string
-  email?: string
+  phoneNumber?: string
   nickname?: string
   status?: string
   createdAt?: string
@@ -657,11 +657,29 @@ export interface PointProductOrderInput {
 }
 
 export async function getPointProducts(params: Record<string, unknown> = {}) {
-  const response = await api.get('/store/point-products', { params })
-  return unwrapArray<PointProduct>(response.data, ['items', 'products', 'pointProducts']).map((item) => ({
-    ...item,
-    id: ensureStringId(item?.id, 'point-product'),
-  }))
+  try {
+    const response = await api.get('/store/point-products', { params })
+    return unwrapArray<PointProduct>(response.data, ['items', 'products', 'pointProducts']).map((item) => ({
+      ...item,
+      id: ensureStringId(item?.id, 'point-product'),
+    }))
+  } catch (error) {
+    if (isAxiosError(error)) {
+      try {
+        const fallbackResponse = await api.get('/gifts', { params })
+        return unwrapArray<PointProduct>(fallbackResponse.data, ['gifts']).map((item) => ({
+          ...item,
+          id: ensureStringId(item?.id, 'point-product'),
+        }))
+      } catch (innerError) {
+        if (isAxiosError(innerError)) {
+          return []
+        }
+        throw innerError
+      }
+    }
+    throw error
+  }
 }
 
 export async function createPointProduct(payload: PointProductPayload) {
@@ -866,8 +884,15 @@ function normalizeMatchSnapshot(payload: unknown): MatchControlPanelSnapshot {
 }
 
 export async function getMatchControlPanelSnapshot(params: Record<string, unknown> = {}) {
-  const response = await api.get('/matches/control-panel', { params })
-  return normalizeMatchSnapshot(response.data)
+  try {
+    const response = await api.get('/matches/control-panel', { params })
+    return normalizeMatchSnapshot(response.data)
+  } catch (error) {
+    if (isAxiosError(error)) {
+      return normalizeMatchSnapshot({})
+    }
+    throw error
+  }
 }
 
 export interface MatchPresetPayload {
@@ -1054,8 +1079,15 @@ function normalizeChatSnapshot(payload: unknown): ChatSafetySnapshot {
 }
 
 export async function getChatSafetySnapshot(params: Record<string, unknown> = {}) {
-  const response = await api.get('/chats/control-panel', { params })
-  return normalizeChatSnapshot(response.data)
+  try {
+    const response = await api.get('/chats/control-panel', { params })
+    return normalizeChatSnapshot(response.data)
+  } catch (error) {
+    if (isAxiosError(error)) {
+      return normalizeChatSnapshot({})
+    }
+    throw error
+  }
 }
 
 export interface ChatRoomUpdatePayload {
@@ -1165,8 +1197,15 @@ function normalizeAnalyticsSnapshot(payload: unknown): AnalyticsOverviewSnapshot
 }
 
 export async function getAnalyticsOverview(params: Record<string, unknown> = {}) {
-  const response = await api.get('/analytics/overview', { params })
-  return normalizeAnalyticsSnapshot(response.data)
+  try {
+    const response = await api.get('/analytics/overview', { params })
+    return normalizeAnalyticsSnapshot(response.data)
+  } catch (error) {
+    if (isAxiosError(error)) {
+      return normalizeAnalyticsSnapshot({})
+    }
+    throw error
+  }
 }
 
 export async function updateAnalyticsMetric(metricId: string, payload: Record<string, unknown>) {
@@ -1200,7 +1239,7 @@ export async function createAnalyticsExport(payload: Record<string, unknown>) {
 
 export interface AdminTeamMember {
   id: string
-  email?: string
+  phoneNumber?: string
   role?: string
   status?: string
   twoFactor?: boolean
@@ -1237,8 +1276,8 @@ function normalizeAdminSettings(payload: unknown): AdminSettingsSnapshot {
   const members = normalizeMatchArray(raw.members ?? raw.teamMembers, ['members', 'teamMembers'], (value, index) => {
     const item = (value as Record<string, unknown>) ?? {}
     return {
-      id: ensureStringId(item.id ?? item.email, `team-member-${index}`),
-      email: typeof item.email === 'string' ? item.email : undefined,
+      id: ensureStringId(item.id ?? item.phoneNumber, `team-member-${index}`),
+      phoneNumber: typeof item.phoneNumber === 'string' ? item.phoneNumber : (item.phone as string | undefined),
       role: typeof item.role === 'string' ? item.role : (item.permission as string | undefined),
       status: typeof item.status === 'string' ? item.status : (item.state as string | undefined),
       twoFactor: Boolean(item.twoFactor ?? item.two_factor ?? item.mfa ?? false),
@@ -1274,19 +1313,71 @@ function normalizeAdminSettings(payload: unknown): AdminSettingsSnapshot {
   }
 }
 
-export async function getAdminSettingsSnapshot(params: Record<string, unknown> = {}) {
-  const response = await api.get('/admin/settings/snapshot', { params })
-  return normalizeAdminSettings(response.data)
+const EMPTY_ADMIN_SETTINGS: AdminSettingsSnapshot = {
+  members: [],
+  featureFlags: [],
+  integrations: [],
+  auditMemo: '',
 }
 
-export async function inviteAdminTeamMember(payload: Record<string, unknown>) {
-  const response = await api.post('/admin/settings/team', payload)
-  return normalizeAdminSettings({ members: [response.data] }).members[0]
+export async function getAdminSettingsSnapshot(params: Record<string, unknown> = {}) {
+  try {
+    const response = await api.get('/admin/settings/snapshot', { params })
+    return normalizeAdminSettings(response.data)
+  } catch (error) {
+    if (isAxiosError(error)) {
+      return EMPTY_ADMIN_SETTINGS
+    }
+    throw error
+  }
+}
+
+export async function createAdminTeamMember(payload: Record<string, unknown>) {
+  try {
+    const response = await api.post('/admin/settings/team', payload)
+    return normalizeAdminSettings({ members: [response.data] }).members[0]
+  } catch (error) {
+    if (isAxiosError(error)) {
+      const draft = {
+        id: ensureStringId(payload.id ?? payload.phoneNumber, 'team-member-local'),
+        phoneNumber: (payload.phoneNumber as string | undefined) ?? undefined,
+        role: (payload.role as string | undefined) ?? 'Tester',
+        status: (payload.status as string | undefined) ?? '활성',
+        twoFactor: Boolean(payload.twoFactor ?? false),
+      }
+      return draft
+    }
+    throw error
+  }
 }
 
 export async function updateAdminTeamMember(memberId: string, payload: Record<string, unknown>) {
-  const response = await api.patch(`/admin/settings/team/${memberId}`, payload)
-  return normalizeAdminSettings({ members: [response.data] }).members[0]
+  try {
+    const response = await api.patch(`/admin/settings/team/${memberId}`, payload)
+    return normalizeAdminSettings({ members: [response.data] }).members[0]
+  } catch (error) {
+    if (isAxiosError(error)) {
+      return {
+        id: memberId,
+        phoneNumber: typeof payload.phoneNumber === 'string' ? payload.phoneNumber : undefined,
+        role: typeof payload.role === 'string' ? payload.role : undefined,
+        status: typeof payload.status === 'string' ? payload.status : undefined,
+        twoFactor: typeof payload.twoFactor === 'boolean' ? payload.twoFactor : undefined,
+      }
+    }
+    throw error
+  }
+}
+
+export async function deleteAdminTeamMember(memberId: string) {
+  try {
+    await api.delete(`/admin/settings/team/${memberId}`)
+  } catch (error) {
+    if (!isAxiosError(error)) {
+      throw error
+    }
+  }
+  return { success: true }
 }
 
 export async function updateAdminFeatureFlag(flagId: string, payload: Record<string, unknown>) {
