@@ -685,3 +685,620 @@ export async function deletePointProduct(productId: string) {
 export async function syncPointProductOrder(items: PointProductOrderInput[]) {
   await api.post('/store/point-products/reorder', { items })
 }
+
+// ---------------------------------------------------------------------------
+// 매칭 & 탐색
+// ---------------------------------------------------------------------------
+
+export interface MatchQueueStat {
+  id: string
+  segment?: string
+  waiting?: number
+  medianWait?: string
+  dropOffRate?: string
+  [key: string]: unknown
+}
+
+export interface MatchPresetWeights {
+  distance?: number
+  interest?: number
+  aiAffinity?: number
+  recency?: number
+  [key: string]: number | undefined
+}
+
+export interface MatchPreset {
+  id: string
+  name?: string
+  isActive?: boolean
+  weights: MatchPresetWeights
+  createdAt?: string
+  author?: string
+  [key: string]: unknown
+}
+
+export interface MatchQuickFilter {
+  id: string
+  label?: string
+  segment?: string
+  description?: string
+  [key: string]: unknown
+}
+
+export interface MatchRecommendationPool {
+  id: string
+  title?: string
+  sortRule?: string
+  metrics?: string
+  owner?: string
+  [key: string]: unknown
+}
+
+export interface MatchHeatRegion {
+  id: string
+  name?: string
+  activeUsers?: number
+  flagged?: number
+  trend?: string
+  [key: string]: unknown
+}
+
+export interface MatchControlPanelSnapshot {
+  queueStats: MatchQueueStat[]
+  presets: MatchPreset[]
+  quickFilters: MatchQuickFilter[]
+  recommendationPools: MatchRecommendationPool[]
+  heatRegions: MatchHeatRegion[]
+  memo?: string | null
+  [key: string]: unknown
+}
+
+function normalizeMatchPresetWeights(payload: unknown): MatchPresetWeights {
+  const base: MatchPresetWeights = { distance: 0, interest: 0, aiAffinity: 0, recency: 0 }
+  if (payload && typeof payload === 'object') {
+    for (const key of Object.keys(base)) {
+      const value = (payload as Record<string, unknown>)[key]
+      if (typeof value === 'number') {
+        base[key as keyof MatchPresetWeights] = value
+      }
+    }
+  }
+  return base
+}
+
+function normalizeMatchPreset(payload: unknown, fallbackIdPrefix: string): MatchPreset {
+  const raw = (payload as Record<string, unknown>) ?? {}
+  const id = ensureStringId(raw.id, fallbackIdPrefix)
+  const weights = normalizeMatchPresetWeights(raw.weights)
+  return {
+    id,
+    name: typeof raw.name === 'string' ? raw.name : undefined,
+    isActive: Boolean(raw.isActive ?? raw.active ?? raw.enabled),
+    weights,
+    createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : (raw.created_at as string | undefined),
+    author: typeof raw.author === 'string' ? raw.author : (raw.createdBy as string | undefined),
+  }
+}
+
+function normalizeMatchArray<T>(payload: unknown, keys: string[], mapper: (value: unknown, index: number) => T): T[] {
+  if (Array.isArray(payload)) {
+    return payload.map(mapper)
+  }
+  if (payload && typeof payload === 'object') {
+    for (const key of keys) {
+      const value = (payload as Record<string, unknown>)[key]
+      if (Array.isArray(value)) {
+        return value.map(mapper)
+      }
+    }
+  }
+  return []
+}
+
+function normalizeMatchSnapshot(payload: unknown): MatchControlPanelSnapshot {
+  const raw = (payload as Record<string, unknown>) ?? {}
+
+  const queueStats = normalizeMatchArray(raw.queueStats ?? raw.queues ?? raw.queue_statistics, ['queueStats', 'queues'], (value, index) => {
+    const item = (value as Record<string, unknown>) ?? {}
+    return {
+      id: ensureStringId(item.id ?? item.segment, `match-queue-${index}`),
+      segment: typeof item.segment === 'string' ? item.segment : (item.name as string | undefined),
+      waiting: typeof item.waiting === 'number' ? item.waiting : Number(item.waiting ?? 0),
+      medianWait: typeof item.medianWait === 'string' ? item.medianWait : (item.median_wait as string | undefined),
+      dropOffRate: typeof item.dropOffRate === 'string' ? item.dropOffRate : (item.drop_off_rate as string | undefined),
+    }
+  })
+
+  const presets = normalizeMatchArray(raw.presets ?? raw.matchPresets, ['presets', 'matchPresets'], (value, index) =>
+    normalizeMatchPreset(value, `match-preset-${index}`)
+  )
+
+  const quickFilters = normalizeMatchArray(raw.quickFilters ?? raw.filters, ['quickFilters', 'filters'], (value, index) => {
+    const item = (value as Record<string, unknown>) ?? {}
+    return {
+      id: ensureStringId(item.id ?? item.label, `match-filter-${index}`),
+      label: typeof item.label === 'string' ? item.label : (item.name as string | undefined),
+      segment: typeof item.segment === 'string' ? item.segment : (item.type as string | undefined),
+      description: typeof item.description === 'string' ? item.description : (item.detail as string | undefined),
+    }
+  })
+
+  const recommendationPools = normalizeMatchArray(
+    raw.recommendationPools ?? raw.pools ?? raw.recommendations,
+    ['recommendationPools', 'pools'],
+    (value, index) => {
+      const item = (value as Record<string, unknown>) ?? {}
+      return {
+        id: ensureStringId(item.id ?? item.title, `match-pool-${index}`),
+        title: typeof item.title === 'string' ? item.title : (item.name as string | undefined),
+        sortRule: typeof item.sortRule === 'string' ? item.sortRule : (item.rule as string | undefined),
+        metrics: typeof item.metrics === 'string' ? item.metrics : (item.metric as string | undefined),
+        owner: typeof item.owner === 'string' ? item.owner : (item.createdBy as string | undefined),
+      }
+    }
+  )
+
+  const heatRegions = normalizeMatchArray(raw.heatRegions ?? raw.regions, ['heatRegions', 'regions'], (value, index) => {
+    const item = (value as Record<string, unknown>) ?? {}
+    return {
+      id: ensureStringId(item.id ?? item.name, `match-region-${index}`),
+      name: typeof item.name === 'string' ? item.name : (item.region as string | undefined),
+      activeUsers:
+        typeof item.activeUsers === 'number'
+          ? item.activeUsers
+          : Number((item as Record<string, unknown>).active_users ?? (item as Record<string, unknown>).active ?? 0),
+      flagged:
+        typeof item.flagged === 'number'
+          ? item.flagged
+          : Number((item as Record<string, unknown>).flagged ?? (item as Record<string, unknown>).alerts ?? 0),
+      trend: typeof item.trend === 'string' ? item.trend : (item.direction as string | undefined),
+    }
+  })
+
+  return {
+    queueStats,
+    presets,
+    quickFilters,
+    recommendationPools,
+    heatRegions,
+    memo: typeof raw.memo === 'string' ? raw.memo : (raw.heatMemo as string | null | undefined) ?? null,
+  }
+}
+
+export async function getMatchControlPanelSnapshot(params: Record<string, unknown> = {}) {
+  const response = await api.get('/matches/control-panel', { params })
+  return normalizeMatchSnapshot(response.data)
+}
+
+export interface MatchPresetPayload {
+  name?: string
+  isActive?: boolean
+  weights?: MatchPresetWeights
+  [key: string]: unknown
+}
+
+export async function updateMatchPreset(presetId: string, payload: MatchPresetPayload) {
+  const response = await api.patch(`/matches/presets/${presetId}`, payload)
+  return normalizeMatchPreset(response.data, presetId)
+}
+
+export async function activateMatchPreset(presetId: string) {
+  const response = await api.post(`/matches/presets/${presetId}/activate`)
+  return normalizeMatchPreset(response.data, presetId)
+}
+
+export async function duplicateMatchPreset(presetId: string) {
+  const response = await api.post(`/matches/presets/${presetId}/duplicate`)
+  return normalizeMatchPreset(response.data, `${presetId}-copy`)
+}
+
+export interface MatchQuickFilterPayload {
+  label: string
+  segment: string
+  description?: string
+  [key: string]: unknown
+}
+
+export async function createMatchQuickFilter(payload: MatchQuickFilterPayload) {
+  const response = await api.post('/matches/quick-filters', payload)
+  const normalized = normalizeMatchArray(response.data, ['filters'], (value) => value)[0]
+  if (normalized && typeof normalized === 'object') {
+    return {
+      id: ensureStringId((normalized as Record<string, unknown>).id ?? payload.label, 'match-filter-new'),
+      label: (normalized as Record<string, unknown>).label ?? payload.label,
+      segment: (normalized as Record<string, unknown>).segment ?? payload.segment,
+      description: (normalized as Record<string, unknown>).description ?? payload.description,
+    }
+  }
+  return {
+    id: ensureStringId(null, 'match-filter'),
+    label: payload.label,
+    segment: payload.segment,
+    description: payload.description,
+  }
+}
+
+export async function deleteMatchQuickFilter(filterId: string) {
+  await api.delete(`/matches/quick-filters/${filterId}`)
+}
+
+export interface MatchRecommendationPoolPayload {
+  title?: string
+  sortRule?: string
+  metrics?: string
+  owner?: string
+  [key: string]: unknown
+}
+
+export async function updateMatchRecommendationPool(poolId: string, payload: MatchRecommendationPoolPayload) {
+  const response = await api.patch(`/matches/recommendation-pools/${poolId}`, payload)
+  const raw = (response.data as Record<string, unknown>) ?? {}
+  return {
+    id: ensureStringId(raw.id ?? poolId, 'match-pool'),
+    title: typeof raw.title === 'string' ? raw.title : (raw.name as string | undefined),
+    sortRule: typeof raw.sortRule === 'string' ? raw.sortRule : (raw.rule as string | undefined),
+    metrics: typeof raw.metrics === 'string' ? raw.metrics : (raw.metric as string | undefined),
+    owner: typeof raw.owner === 'string' ? raw.owner : (raw.createdBy as string | undefined),
+  }
+}
+
+export async function saveMatchHeatMemo(payload: { memo: string }) {
+  const response = await api.post('/matches/heat-map/memo', payload)
+  return (response.data as { memo?: string } | undefined)?.memo ?? payload.memo
+}
+
+// ---------------------------------------------------------------------------
+// 채팅 & 안전
+// ---------------------------------------------------------------------------
+
+export interface ChatRoomSummary {
+  id: string
+  title?: string
+  category?: string
+  region?: string
+  distanceKm?: number
+  unread?: number
+  newMessages?: number
+  participants?: number
+  status?: string
+  isFallback?: boolean
+  createdAt?: string
+  lastMessageAt?: string
+  [key: string]: unknown
+}
+
+export interface ChatSafetyReport {
+  id: string
+  roomId?: string
+  reporter?: string
+  reason?: string
+  status?: string
+  createdAt?: string
+  [key: string]: unknown
+}
+
+export interface ChatPolicyRule {
+  id: string
+  name?: string
+  description?: string
+  enabled?: boolean
+  autoAction?: string
+  [key: string]: unknown
+}
+
+export interface ChatSafetySnapshot {
+  rooms: ChatRoomSummary[]
+  reports: ChatSafetyReport[]
+  policyRules: ChatPolicyRule[]
+  cannedResponses?: string[]
+  memo?: string
+  [key: string]: unknown
+}
+
+function normalizeChatSnapshot(payload: unknown): ChatSafetySnapshot {
+  const raw = (payload as Record<string, unknown>) ?? {}
+  const rooms = normalizeMatchArray(raw.rooms ?? raw.chatRooms, ['rooms', 'chatRooms'], (value, index) => {
+    const item = (value as Record<string, unknown>) ?? {}
+    return {
+      id: ensureStringId(item.id ?? item.roomId, `chat-room-${index}`),
+      title: typeof item.title === 'string' ? item.title : (item.name as string | undefined),
+      category: typeof item.category === 'string' ? item.category : (item.segment as string | undefined),
+      region: typeof item.region === 'string' ? item.region : (item.location as string | undefined),
+      distanceKm: typeof item.distanceKm === 'number' ? item.distanceKm : Number(item.distance_km ?? item.distance ?? 0),
+      unread: typeof item.unread === 'number' ? item.unread : Number(item.unread ?? 0),
+      newMessages: typeof item.newMessages === 'number' ? item.newMessages : Number(item.new_messages ?? item.new ?? 0),
+      participants:
+        typeof item.participants === 'number'
+          ? item.participants
+          : Number(item.participant_count ?? item.members ?? 0),
+      status: typeof item.status === 'string' ? item.status : (item.state as string | undefined),
+      isFallback: Boolean(item.isFallback ?? item.sample ?? false),
+      createdAt: typeof item.createdAt === 'string' ? item.createdAt : (item.created_at as string | undefined),
+      lastMessageAt: typeof item.lastMessageAt === 'string' ? item.lastMessageAt : (item.last_message_at as string | undefined),
+    }
+  })
+
+  const reports = normalizeMatchArray(raw.reports ?? raw.safetyReports, ['reports', 'safetyReports'], (value, index) => {
+    const item = (value as Record<string, unknown>) ?? {}
+    return {
+      id: ensureStringId(item.id ?? item.reportId, `chat-report-${index}`),
+      roomId: typeof item.roomId === 'string' ? item.roomId : (item.room_id as string | undefined),
+      reporter: typeof item.reporter === 'string' ? item.reporter : (item.user as string | undefined),
+      reason: typeof item.reason === 'string' ? item.reason : (item.detail as string | undefined),
+      status: typeof item.status === 'string' ? item.status : (item.state as string | undefined),
+      createdAt: typeof item.createdAt === 'string' ? item.createdAt : (item.created_at as string | undefined),
+    }
+  })
+
+  const policyRules = normalizeMatchArray(raw.policyRules ?? raw.rules, ['policyRules', 'rules'], (value, index) => {
+    const item = (value as Record<string, unknown>) ?? {}
+    return {
+      id: ensureStringId(item.id ?? item.ruleId, `chat-rule-${index}`),
+      name: typeof item.name === 'string' ? item.name : (item.title as string | undefined),
+      description: typeof item.description === 'string' ? item.description : (item.detail as string | undefined),
+      enabled: Boolean(item.enabled ?? item.active ?? false),
+      autoAction: typeof item.autoAction === 'string' ? item.autoAction : (item.action as string | undefined),
+    }
+  })
+
+  const cannedResponses = normalizeMatchArray(raw.cannedResponses, ['cannedResponses'], (value) => String(value))
+
+  return {
+    rooms,
+    reports,
+    policyRules,
+    cannedResponses: cannedResponses.length > 0 ? cannedResponses : undefined,
+    memo: typeof raw.memo === 'string' ? raw.memo : (raw.safetyMemo as string | undefined),
+  }
+}
+
+export async function getChatSafetySnapshot(params: Record<string, unknown> = {}) {
+  const response = await api.get('/chats/control-panel', { params })
+  return normalizeChatSnapshot(response.data)
+}
+
+export interface ChatRoomUpdatePayload {
+  allowEntry?: boolean
+  cannedMessage?: string
+  status?: string
+  [key: string]: unknown
+}
+
+export async function updateChatRoom(roomId: string, payload: ChatRoomUpdatePayload) {
+  const response = await api.patch(`/chats/rooms/${roomId}`, payload)
+  return normalizeChatSnapshot({ rooms: [response.data] }).rooms[0]
+}
+
+export async function resolveChatReport(reportId: string, payload: Record<string, unknown>) {
+  const response = await api.post(`/chats/reports/${reportId}/resolve`, payload)
+  return normalizeChatSnapshot({ reports: [response.data] }).reports[0]
+}
+
+export async function updateChatPolicyRule(ruleId: string, payload: Record<string, unknown>) {
+  const response = await api.patch(`/chats/policy-rules/${ruleId}`, payload)
+  return normalizeChatSnapshot({ policyRules: [response.data] }).policyRules[0]
+}
+
+export async function saveChatSafetyMemo(payload: { memo: string }) {
+  const response = await api.post('/chats/control-panel/memo', payload)
+  return (response.data as { memo?: string } | undefined)?.memo ?? payload.memo
+}
+
+// ---------------------------------------------------------------------------
+// 분석 & 리포트
+// ---------------------------------------------------------------------------
+
+export interface AnalyticsMetric {
+  id: string
+  name?: string
+  value?: string
+  delta?: string
+  description?: string
+  pinned?: boolean
+  [key: string]: unknown
+}
+
+export interface AnalyticsReportJob {
+  id: string
+  name?: string
+  cadence?: string
+  destination?: string
+  format?: string
+  active?: boolean
+  [key: string]: unknown
+}
+
+export interface AnalyticsExportLog {
+  id: string
+  title?: string
+  generatedAt?: string
+  status?: string
+  [key: string]: unknown
+}
+
+export interface AnalyticsOverviewSnapshot {
+  metrics: AnalyticsMetric[]
+  reportJobs: AnalyticsReportJob[]
+  exportLogs: AnalyticsExportLog[]
+  [key: string]: unknown
+}
+
+function normalizeAnalyticsSnapshot(payload: unknown): AnalyticsOverviewSnapshot {
+  const raw = (payload as Record<string, unknown>) ?? {}
+
+  const metrics = normalizeMatchArray(raw.metrics ?? raw.metricWidgets, ['metrics', 'metricWidgets'], (value, index) => {
+    const item = (value as Record<string, unknown>) ?? {}
+    return {
+      id: ensureStringId(item.id ?? item.metricId, `analytics-metric-${index}`),
+      name: typeof item.name === 'string' ? item.name : (item.title as string | undefined),
+      value: typeof item.value === 'string' ? item.value : (item.current as string | undefined),
+      delta: typeof item.delta === 'string' ? item.delta : (item.change as string | undefined),
+      description: typeof item.description === 'string' ? item.description : (item.detail as string | undefined),
+      pinned: Boolean(item.pinned ?? item.isPinned ?? item.highlighted ?? false),
+    }
+  })
+
+  const reportJobs = normalizeMatchArray(raw.reportJobs ?? raw.jobs, ['reportJobs', 'jobs'], (value, index) => {
+    const item = (value as Record<string, unknown>) ?? {}
+    return {
+      id: ensureStringId(item.id ?? item.jobId, `analytics-job-${index}`),
+      name: typeof item.name === 'string' ? item.name : (item.title as string | undefined),
+      cadence: typeof item.cadence === 'string' ? item.cadence : (item.schedule as string | undefined),
+      destination: typeof item.destination === 'string' ? item.destination : (item.channel as string | undefined),
+      format: typeof item.format === 'string' ? item.format : (item.fileType as string | undefined),
+      active: Boolean(item.active ?? item.enabled ?? false),
+    }
+  })
+
+  const exportLogs = normalizeMatchArray(raw.exportLogs ?? raw.exports, ['exportLogs', 'exports'], (value, index) => {
+    const item = (value as Record<string, unknown>) ?? {}
+    return {
+      id: ensureStringId(item.id ?? item.exportId, `analytics-export-${index}`),
+      title: typeof item.title === 'string' ? item.title : (item.name as string | undefined),
+      generatedAt: typeof item.generatedAt === 'string' ? item.generatedAt : (item.generated_at as string | undefined),
+      status: typeof item.status === 'string' ? item.status : (item.state as string | undefined),
+    }
+  })
+
+  return { metrics, reportJobs, exportLogs }
+}
+
+export async function getAnalyticsOverview(params: Record<string, unknown> = {}) {
+  const response = await api.get('/analytics/overview', { params })
+  return normalizeAnalyticsSnapshot(response.data)
+}
+
+export async function updateAnalyticsMetric(metricId: string, payload: Record<string, unknown>) {
+  const response = await api.patch(`/analytics/metrics/${metricId}`, payload)
+  return normalizeAnalyticsSnapshot({ metrics: [response.data] }).metrics[0]
+}
+
+export async function createAnalyticsMetric(payload: Record<string, unknown>) {
+  const response = await api.post('/analytics/metrics', payload)
+  return normalizeAnalyticsSnapshot({ metrics: [response.data] }).metrics[0]
+}
+
+export async function updateAnalyticsReportJob(jobId: string, payload: Record<string, unknown>) {
+  const response = await api.patch(`/analytics/report-jobs/${jobId}`, payload)
+  return normalizeAnalyticsSnapshot({ reportJobs: [response.data] }).reportJobs[0]
+}
+
+export async function toggleAnalyticsReportJob(jobId: string, active: boolean) {
+  const response = await api.post(`/analytics/report-jobs/${jobId}/${active ? 'activate' : 'deactivate'}`)
+  return normalizeAnalyticsSnapshot({ reportJobs: [response.data] }).reportJobs[0]
+}
+
+export async function createAnalyticsExport(payload: Record<string, unknown>) {
+  const response = await api.post('/analytics/exports', payload)
+  return normalizeAnalyticsSnapshot({ exportLogs: [response.data] }).exportLogs[0]
+}
+
+// ---------------------------------------------------------------------------
+// 설정 & 통합
+// ---------------------------------------------------------------------------
+
+export interface AdminTeamMember {
+  id: string
+  email?: string
+  role?: string
+  status?: string
+  twoFactor?: boolean
+  [key: string]: unknown
+}
+
+export interface AdminFeatureFlag {
+  id: string
+  name?: string
+  description?: string
+  environment?: string
+  enabled?: boolean
+  [key: string]: unknown
+}
+
+export interface AdminIntegrationSetting {
+  id: string
+  label?: string
+  value?: string
+  placeholder?: string
+  [key: string]: unknown
+}
+
+export interface AdminSettingsSnapshot {
+  members: AdminTeamMember[]
+  featureFlags: AdminFeatureFlag[]
+  integrations: AdminIntegrationSetting[]
+  auditMemo?: string
+  [key: string]: unknown
+}
+
+function normalizeAdminSettings(payload: unknown): AdminSettingsSnapshot {
+  const raw = (payload as Record<string, unknown>) ?? {}
+  const members = normalizeMatchArray(raw.members ?? raw.teamMembers, ['members', 'teamMembers'], (value, index) => {
+    const item = (value as Record<string, unknown>) ?? {}
+    return {
+      id: ensureStringId(item.id ?? item.email, `team-member-${index}`),
+      email: typeof item.email === 'string' ? item.email : undefined,
+      role: typeof item.role === 'string' ? item.role : (item.permission as string | undefined),
+      status: typeof item.status === 'string' ? item.status : (item.state as string | undefined),
+      twoFactor: Boolean(item.twoFactor ?? item.two_factor ?? item.mfa ?? false),
+    }
+  })
+
+  const featureFlags = normalizeMatchArray(raw.featureFlags ?? raw.flags, ['featureFlags', 'flags'], (value, index) => {
+    const item = (value as Record<string, unknown>) ?? {}
+    return {
+      id: ensureStringId(item.id ?? item.key, `feature-flag-${index}`),
+      name: typeof item.name === 'string' ? item.name : (item.key as string | undefined),
+      description: typeof item.description === 'string' ? item.description : (item.detail as string | undefined),
+      environment: typeof item.environment === 'string' ? item.environment : (item.env as string | undefined),
+      enabled: Boolean(item.enabled ?? item.active ?? false),
+    }
+  })
+
+  const integrations = normalizeMatchArray(raw.integrations ?? raw.integrationSettings, ['integrations', 'integrationSettings'], (value, index) => {
+    const item = (value as Record<string, unknown>) ?? {}
+    return {
+      id: ensureStringId(item.id ?? item.key, `integration-${index}`),
+      label: typeof item.label === 'string' ? item.label : (item.name as string | undefined),
+      value: typeof item.value === 'string' ? item.value : (item.current as string | undefined),
+      placeholder: typeof item.placeholder === 'string' ? item.placeholder : (item.hint as string | undefined),
+    }
+  })
+
+  return {
+    members,
+    featureFlags,
+    integrations,
+    auditMemo: typeof raw.auditMemo === 'string' ? raw.auditMemo : (raw.audit_log as string | undefined),
+  }
+}
+
+export async function getAdminSettingsSnapshot(params: Record<string, unknown> = {}) {
+  const response = await api.get('/admin/settings/snapshot', { params })
+  return normalizeAdminSettings(response.data)
+}
+
+export async function inviteAdminTeamMember(payload: Record<string, unknown>) {
+  const response = await api.post('/admin/settings/team', payload)
+  return normalizeAdminSettings({ members: [response.data] }).members[0]
+}
+
+export async function updateAdminTeamMember(memberId: string, payload: Record<string, unknown>) {
+  const response = await api.patch(`/admin/settings/team/${memberId}`, payload)
+  return normalizeAdminSettings({ members: [response.data] }).members[0]
+}
+
+export async function updateAdminFeatureFlag(flagId: string, payload: Record<string, unknown>) {
+  const response = await api.patch(`/admin/settings/feature-flags/${flagId}`, payload)
+  return normalizeAdminSettings({ featureFlags: [response.data] }).featureFlags[0]
+}
+
+export async function updateAdminIntegrationSetting(settingId: string, payload: Record<string, unknown>) {
+  const response = await api.patch(`/admin/settings/integrations/${settingId}`, payload)
+  return normalizeAdminSettings({ integrations: [response.data] }).integrations[0]
+}
+
+export async function saveAdminAuditMemo(payload: { memo: string }) {
+  const response = await api.post('/admin/settings/audit-log', payload)
+  return (response.data as { memo?: string } | undefined)?.memo ?? payload.memo
+}
