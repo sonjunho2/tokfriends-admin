@@ -86,7 +86,7 @@ const FALLBACK_SNAPSHOT = {
     {
       id: 'REP-1001',
       roomId: 'ROOM003',
-      reporter: 'hana@example.com',
+      reporter: '010-3210-1101',
       reason: '부적절한 언어 사용',
       status: 'PENDING',
       createdAt: '2024-03-14 08:12',
@@ -94,7 +94,7 @@ const FALLBACK_SNAPSHOT = {
     {
       id: 'REP-1002',
       roomId: 'ROOM002',
-      reporter: 'minsu@example.com',
+      reporter: '010-5624-2202',
       reason: '홍보성 메시지',
       status: 'IN_PROGRESS',
       createdAt: '2024-03-13 15:48',
