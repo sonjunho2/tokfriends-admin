@@ -13,14 +13,19 @@ import './globals.css'
 const PUBLIC_PATHS = ['/login']
 
 const NAV_ITEMS: AppShellNavItem[] = [
-  { label: '대시보드', href: '/dashboard', description: '핵심 KPI와 라이브 시스템 상태' },
-  { label: '사용자', href: '/users', description: '가입/인증 상태, 제재 및 지원 이력' },
-  { label: '매칭 & 탐색', href: '/matches', description: '매칭 큐와 추천 파이프라인 제어', badge: 'Beta' },
-  { label: '채팅 & 안전', href: '/chats', description: '실시간 채팅 모니터링과 신고 처리' },
-  { label: '콘텐츠 & 참여', href: '/content', description: '공지, 캠페인, FAQ 워크플로우 운영' },
-  { label: '분석 & 리포트', href: '/analytics', description: '코호트 분석과 데이터 익스포트' },
-  { label: '설정', href: '/settings', description: '팀 권한, 기능 플래그, 통합 설정' },
-  { label: '상점', href: '/store', description: '포인트 상품, 구독 및 결제 설정' },
+  { label: '대시보드', href: '/dashboard', description: '오늘 서비스 상황과 우선 처리할 일을 한눈에 확인합니다.' },
+  { label: '사용자', href: '/users', description: '가입·인증·문의 이력을 찾아보고 바로 대응합니다.' },
+  {
+    label: '매칭 & 탐색',
+    href: '/matches',
+    description: '매칭 대기열과 추천 기준을 조정해 이용자 경험을 개선합니다.',
+    badge: 'Beta',
+  },
+  { label: '채팅 & 안전', href: '/chats', description: '실시간 채팅방 상태와 신고 접수를 모니터링합니다.' },
+  { label: '콘텐츠 & 참여', href: '/content', description: '공지와 캠페인을 작성하고 발행 일정을 관리합니다.' },
+  { label: '분석 & 리포트', href: '/analytics', description: '핵심 지표와 정기 보고서를 확인하고 공유합니다.' },
+  { label: '설정', href: '/settings', description: '팀 권한, 기능 플래그, 외부 연동 정보를 관리합니다.' },
+  { label: '상점', href: '/store', description: '포인트 상품과 결제 관련 항목을 손쉽게 설정합니다.' },
 ]
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
