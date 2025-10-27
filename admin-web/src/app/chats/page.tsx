@@ -344,7 +344,7 @@ export default function ChatsPage() {
     }
   }
 
-  const handleSafetyMemoBlur = async () => {
+  async function handleSafetyMemoBlur() {
     if (safetyMemo.trim() === initialMemo.trim()) return
     setSavingMemo(true)
     try {
@@ -357,9 +357,9 @@ export default function ChatsPage() {
       toast({ title: '메모 저장 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
     } finally {
       setSavingMemo(false)
+    }
   }
-}
-  
+
   return (
     <div className="grid gap-6 xl:grid-cols-[3fr_4fr]">
       <section className="space-y-4">
@@ -419,7 +419,7 @@ export default function ChatsPage() {
                             <span className="text-xs text-muted-foreground">
                               {room.category ?? '카테고리 없음'} · 참여 {room.participants ?? 0}명 · 생성 {room.createdAt ?? '-'}
                             </span>
-                            <span className="text-xs text-muted-foreground">마지막 메시지 {room.lastMessageAt ?? '-'}</span>                          </div>
+                            <span className="text-xs text-muted-foreground">마지막 메시지 {room.lastMessageAt ?? '-'}</span>
                           </div>
                         </td>
                         <td className="px-4 py-3 align-top">
