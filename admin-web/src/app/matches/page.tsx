@@ -99,6 +99,12 @@ const SEGMENT_OPTIONS = [
 
 type SegmentValue = (typeof SEGMENT_OPTIONS)[number]['value']
 
+type NewFilterState = {
+  label: string
+  segment: SegmentValue
+  description: string
+}
+
 function formatNumber(value?: number) {
   if (typeof value !== 'number' || Number.isNaN(value)) return '0'
   return value.toLocaleString()
@@ -106,7 +112,12 @@ function formatNumber(value?: number) {
 
 function sumWeights(preset: MatchPreset | null | undefined) {
   if (!preset) return 0
-  return Object.values(preset.weights ?? {}).reduce((total, current) => total + (current ?? 0), 0)
+  return Object.values(preset.weights ?? {}).reduce<number>((total, current) => {
+    if (typeof current === 'number') {
+      return total + current
+    }
+    return total
+  }, 0)
 }
 
 function trendLabel(value?: string) {
@@ -137,7 +148,7 @@ export default function MatchesPage() {
   const [selectedPresetId, setSelectedPresetId] = useState<string>(
     FALLBACK_SNAPSHOT.presets.find((preset) => preset.isActive)?.id ?? FALLBACK_SNAPSHOT.presets[0]?.id ?? ''
   )
-  const [newFilter, setNewFilter] = useState({
+  const [newFilter, setNewFilter] = useState<NewFilterState>({
     label: '',
     segment: SEGMENT_OPTIONS[0]?.value ?? '접속중',
     description: '',
