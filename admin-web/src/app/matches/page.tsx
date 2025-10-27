@@ -1,6 +1,7 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { Loader2, RefreshCcw } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -9,136 +10,206 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/components/ui/use-toast'
+import {
+  activateMatchPreset,
+  createMatchQuickFilter,
+  deleteMatchQuickFilter,
+  duplicateMatchPreset,
+  getMatchControlPanelSnapshot,
+  saveMatchHeatMemo,
+  updateMatchPreset,
+  updateMatchRecommendationPool,
+  type MatchControlPanelSnapshot,
+  type MatchHeatRegion,
+  type MatchPreset,
+  type MatchQuickFilter,
+  type MatchQueueStat,
+  type MatchRecommendationPool,
+} from '@/lib/api'
+import type { AxiosError } from 'axios'
 
-interface QueueStat {
-  id: string
-  segment: string
-  waiting: number
-  medianWait: string
-  dropOffRate: string
+const FALLBACK_SNAPSHOT: MatchControlPanelSnapshot = {
+  queueStats: [
+    { id: 'SEG-1', segment: '서울 20대', waiting: 128, medianWait: '00:42', dropOffRate: '4.2%' },
+    { id: 'SEG-2', segment: '부산 취향 모임', waiting: 76, medianWait: '01:18', dropOffRate: '6.8%' },
+    { id: 'SEG-3', segment: '야간 이용자', waiting: 54, medianWait: '02:05', dropOffRate: '8.1%' },
+    { id: 'SEG-4', segment: '신규 가입자', waiting: 192, medianWait: '00:58', dropOffRate: '5.6%' },
+  ],
+  presets: [
+    {
+      id: 'preset-balanced',
+      name: '표준 밸런스',
+      isActive: true,
+      weights: { distance: 30, interest: 30, aiAffinity: 25, recency: 15 },
+      createdAt: '2024-03-01',
+      author: '이한별',
+    },
+    {
+      id: 'preset-high-affinity',
+      name: '관심사 우선',
+      isActive: false,
+      weights: { distance: 20, interest: 40, aiAffinity: 30, recency: 10 },
+      createdAt: '2024-02-21',
+      author: '박지원',
+    },
+  ],
+  quickFilters: [
+    { id: 'F1', label: '지금 접속중', segment: '접속중', description: '최근 5분 내 접속' },
+    { id: 'F2', label: '근처 친구', segment: '가까운 거리', description: '5km 이내 사용자' },
+    { id: 'F3', label: '20대 추천', segment: '연령대', description: '출생연도 1995~2005' },
+    { id: 'F4', label: '같이 운동', segment: '의도', description: '관심사=운동, 등산' },
+  ],
+  recommendationPools: [
+    {
+      id: 'POOL1',
+      title: 'HOT 추천',
+      sortRule: '관심·대화수·포인트 지표',
+      metrics: 'CTR 18.2%',
+      owner: '추천팀',
+    },
+    {
+      id: 'POOL2',
+      title: '접속중',
+      sortRule: '최근 접속 순',
+      metrics: '세션 유지율 72%',
+      owner: '플랫폼',
+    },
+    {
+      id: 'POOL3',
+      title: '가까운 친구',
+      sortRule: '거리 ASC + 활성도',
+      metrics: '첫 메시지 전환 9%',
+      owner: '추천팀',
+    },
+  ],
+  heatRegions: [
+    { id: 'HR-1', name: '서울 강남·서초', activeUsers: 1832, flagged: 6, trend: 'UP' },
+    { id: 'HR-2', name: '부산 해운대', activeUsers: 684, flagged: 4, trend: 'FLAT' },
+    { id: 'HR-3', name: '대구 수성', activeUsers: 412, flagged: 9, trend: 'DOWN' },
+  ],
+  memo: '',
 }
 
-interface MatchingPreset {
-  id: string
-  name: string
-  isActive: boolean
-  weights: {
-    distance: number
-    interest: number
-    aiAffinity: number
-    recency: number
+const SEGMENT_OPTIONS = [
+  { value: '접속중', label: '접속중' },
+  { value: '가까운 거리', label: '가까운 거리' },
+  { value: '연령대', label: '연령대' },
+  { value: '의도', label: '의도' },
+] as const
+
+type SegmentValue = (typeof SEGMENT_OPTIONS)[number]['value']
+
+function formatNumber(value?: number) {
+  if (typeof value !== 'number' || Number.isNaN(value)) return '0'
+  return value.toLocaleString()
+}
+
+function sumWeights(preset: MatchPreset | null | undefined) {
+  if (!preset) return 0
+  return Object.values(preset.weights ?? {}).reduce((total, current) => total + (current ?? 0), 0)
+}
+
+function trendLabel(value?: string) {
+  switch (value) {
+    case 'UP':
+      return '상승'
+    case 'DOWN':
+      return '하락'
+    default:
+      return '유지'
   }
-  createdAt: string
-  author: string
 }
-
-interface QuickFilter {
-  id: string
-  label: string
-  segment: '접속중' | '가까운 거리' | '연령대' | '의도'
-  description: string
-}
-
-interface RecommendationPool {
-  id: string
-  title: string
-  sortRule: string
-  metrics: string
-  owner: string
-}
-
-interface HeatRegion {
-  id: string
-  name: string
-  activeUsers: number
-  flagged: number
-  trend: 'UP' | 'DOWN' | 'FLAT'
-}
-
-const QUEUE_STATS: QueueStat[] = [
-  { id: 'SEG-1', segment: '서울 20대', waiting: 128, medianWait: '00:42', dropOffRate: '4.2%' },
-  { id: 'SEG-2', segment: '부산 취향 모임', waiting: 76, medianWait: '01:18', dropOffRate: '6.8%' },
-  { id: 'SEG-3', segment: '야간 이용자', waiting: 54, medianWait: '02:05', dropOffRate: '8.1%' },
-  { id: 'SEG-4', segment: '신규 가입자', waiting: 192, medianWait: '00:58', dropOffRate: '5.6%' },
-]
-
-const INITIAL_PRESETS: MatchingPreset[] = [
-  {
-    id: 'preset-balanced',
-    name: '표준 밸런스',
-    isActive: true,
-    weights: { distance: 30, interest: 30, aiAffinity: 25, recency: 15 },
-    createdAt: '2024-03-01',
-    author: '이한별',
-  },
-  {
-    id: 'preset-high-affinity',
-    name: '관심사 우선',
-    isActive: false,
-    weights: { distance: 20, interest: 40, aiAffinity: 30, recency: 10 },
-    createdAt: '2024-02-21',
-    author: '박지원',
-  },
-]
-
-const INITIAL_FILTERS: QuickFilter[] = [
-  { id: 'F1', label: '지금 접속중', segment: '접속중', description: '최근 5분 내 접속' },
-  { id: 'F2', label: '근처 친구', segment: '가까운 거리', description: '5km 이내 사용자' },
-  { id: 'F3', label: '20대 추천', segment: '연령대', description: '출생연도 1995~2005' },
-  { id: 'F4', label: '같이 운동', segment: '의도', description: '관심사=운동, 등산' },
-]
-
-const INITIAL_POOLS: RecommendationPool[] = [
-  { id: 'POOL1', title: 'HOT 추천', sortRule: '관심·대화수·포인트 지표', metrics: 'CTR 18.2%', owner: '추천팀' },
-  { id: 'POOL2', title: '접속중', sortRule: '최근 접속 순', metrics: '세션 유지율 72%', owner: '플랫폼' },
-  { id: 'POOL3', title: '가까운 친구', sortRule: '거리 ASC + 활성도', metrics: '첫 메시지 전환 9%', owner: '추천팀' },
-]
-
-const HEAT_REGIONS: HeatRegion[] = [
-  { id: 'HR-1', name: '서울 강남·서초', activeUsers: 1832, flagged: 6, trend: 'UP' },
-  { id: 'HR-2', name: '부산 해운대', activeUsers: 684, flagged: 4, trend: 'FLAT' },
-  { id: 'HR-3', name: '대구 수성', activeUsers: 412, flagged: 9, trend: 'DOWN' },
-]
 
 export default function MatchesPage() {
   const { toast } = useToast()
-  const [filters, setFilters] = useState(INITIAL_FILTERS)
-  const [pools, setPools] = useState(INITIAL_POOLS)
-  const [presets, setPresets] = useState(INITIAL_PRESETS)
-  const [selectedPresetId, setSelectedPresetId] = useState<string>(INITIAL_PRESETS[0]?.id ?? '')
+
+  const [isLoadingSnapshot, setIsLoadingSnapshot] = useState(false)
+  const [queueStats, setQueueStats] = useState<MatchQueueStat[]>(FALLBACK_SNAPSHOT.queueStats)
+  const [presets, setPresets] = useState<MatchPreset[]>(FALLBACK_SNAPSHOT.presets)
+  const [quickFilters, setQuickFilters] = useState<MatchQuickFilter[]>(FALLBACK_SNAPSHOT.quickFilters)
+  const [recommendationPools, setRecommendationPools] = useState<MatchRecommendationPool[]>(
+    FALLBACK_SNAPSHOT.recommendationPools
+  )
+  const [heatRegions, setHeatRegions] = useState<MatchHeatRegion[]>(FALLBACK_SNAPSHOT.heatRegions)
+  const [heatSummaryMemo, setHeatSummaryMemo] = useState(FALLBACK_SNAPSHOT.memo ?? '')
+  const [initialHeatMemo, setInitialHeatMemo] = useState(FALLBACK_SNAPSHOT.memo ?? '')
+
+  const [selectedPresetId, setSelectedPresetId] = useState<string>(
+    FALLBACK_SNAPSHOT.presets.find((preset) => preset.isActive)?.id ?? FALLBACK_SNAPSHOT.presets[0]?.id ?? ''
+  )
   const [newFilter, setNewFilter] = useState({
     label: '',
-    segment: '접속중' as QuickFilter['segment'],
+    segment: SEGMENT_OPTIONS[0]?.value ?? '접속중',
     description: '',
   })
-  const [heatSummaryMemo, setHeatSummaryMemo] = useState('')
+
+  const [isSavingPreset, setIsSavingPreset] = useState(false)
+  const [isActivatingPreset, setIsActivatingPreset] = useState(false)
+  const [isDuplicatingPreset, setIsDuplicatingPreset] = useState(false)
+  const [isAddingFilter, setIsAddingFilter] = useState(false)
+  const [removingFilterId, setRemovingFilterId] = useState<string | null>(null)
+  const [updatingPoolId, setUpdatingPoolId] = useState<string | null>(null)
+  const [isSavingHeatMemo, setIsSavingHeatMemo] = useState(false)
 
   const selectedPreset = useMemo(
     () => presets.find((item) => item.id === selectedPresetId) ?? presets[0] ?? null,
     [presets, selectedPresetId]
   )
 
-  const addFilter = () => {
-    if (!newFilter.label.trim()) {
-      toast({ title: '필터 이름이 필요합니다.', variant: 'destructive' })
-      return
+  useEffect(() => {
+    void loadSnapshot()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function loadSnapshot() {
+    setIsLoadingSnapshot(true)
+    try {
+      const snapshot = await getMatchControlPanelSnapshot()
+      const nextQueue = snapshot.queueStats.length > 0 ? snapshot.queueStats : FALLBACK_SNAPSHOT.queueStats
+      const nextPresets = snapshot.presets.length > 0 ? snapshot.presets : FALLBACK_SNAPSHOT.presets
+      const nextFilters = snapshot.quickFilters.length > 0 ? snapshot.quickFilters : FALLBACK_SNAPSHOT.quickFilters
+      const nextPools =
+        snapshot.recommendationPools.length > 0 ? snapshot.recommendationPools : FALLBACK_SNAPSHOT.recommendationPools
+      const nextRegions = snapshot.heatRegions.length > 0 ? snapshot.heatRegions : FALLBACK_SNAPSHOT.heatRegions
+
+      setQueueStats(nextQueue)
+      setPresets(nextPresets)
+      setQuickFilters(nextFilters)
+      setRecommendationPools(nextPools)
+      setHeatRegions(nextRegions)
+      setHeatSummaryMemo(snapshot.memo ?? '')
+      setInitialHeatMemo(snapshot.memo ?? '')
+
+      const activePreset = nextPresets.find((preset) => preset.isActive) ?? nextPresets[0]
+      if (activePreset) {
+        setSelectedPresetId(activePreset.id)
+      }
+    } catch (error) {
+      const ax = error as AxiosError | undefined
+      const message =
+        (ax?.response?.data as any)?.message ||
+        ax?.message ||
+        '매칭 정보를 불러오지 못했습니다. 기본 안내 데이터로 대체합니다.'
+      toast({
+        title: '매칭 패널 불러오기 실패',
+        description: Array.isArray(message) ? message.join(', ') : String(message),
+        variant: 'destructive',
+      })
+      setQueueStats(FALLBACK_SNAPSHOT.queueStats)
+      setPresets(FALLBACK_SNAPSHOT.presets)
+      setQuickFilters(FALLBACK_SNAPSHOT.quickFilters)
+      setRecommendationPools(FALLBACK_SNAPSHOT.recommendationPools)
+      setHeatRegions(FALLBACK_SNAPSHOT.heatRegions)
+      setHeatSummaryMemo(FALLBACK_SNAPSHOT.memo ?? '')
+      setInitialHeatMemo(FALLBACK_SNAPSHOT.memo ?? '')
+    } finally {
+      setIsLoadingSnapshot(false)
     }
-    const id = `F${Date.now().toString().slice(-4)}`
-    setFilters((prev) => [...prev, { id, ...newFilter }])
-    setNewFilter({ label: '', segment: '접속중', description: '' })
-    toast({ title: '빠른 필터 추가', description: `${newFilter.label} 필터가 생성되었습니다.` })
   }
 
-  const removeFilter = (id: string) => {
-    setFilters((prev) => prev.filter((item) => item.id !== id))
-  }
-
-  const updatePool = (id: string, payload: Partial<RecommendationPool>) => {
-    setPools((prev) => prev.map((pool) => (pool.id === id ? { ...pool, ...payload } : pool)))
-  }
-
-  const updatePresetWeight = (key: keyof MatchingPreset['weights'], value: number) => {
+  const updatePresetWeight = (key: keyof MatchPreset['weights'], value: number) => {
     if (!selectedPreset) return
+    const nextValue = Math.max(0, Math.min(100, Number.isNaN(value) ? 0 : value))
     setPresets((prev) =>
       prev.map((preset) =>
         preset.id === selectedPreset.id
@@ -146,7 +217,7 @@ export default function MatchesPage() {
               ...preset,
               weights: {
                 ...preset.weights,
-                [key]: Math.max(0, Math.min(100, value)),
+                [key]: nextValue,
               },
             }
           : preset
@@ -154,42 +225,148 @@ export default function MatchesPage() {
     )
   }
 
-  const savePreset = () => {
+  const handleSavePreset = async () => {
     if (!selectedPreset) return
-    toast({ title: '프리셋 저장', description: `${selectedPreset.name} 가중치 구성이 저장되었습니다.` })
-  }
-
-  const activatePreset = (id: string) => {
-    setPresets((prev) => prev.map((preset) => ({ ...preset, isActive: preset.id === id })))
-    setSelectedPresetId(id)
-    toast({ title: '프리셋 활성화', description: '새로운 매칭 가중치가 적용되었습니다.' })
-  }
-
-  const duplicatePreset = () => {
-    if (!selectedPreset) return
-    const id = `preset-${Date.now().toString(36)}`
-    const clone: MatchingPreset = {
-      ...selectedPreset,
-      id,
-      name: `${selectedPreset.name} 사본`,
-      isActive: false,
-      createdAt: new Date().toISOString().slice(0, 10),
-      author: '운영자',
+    setIsSavingPreset(true)
+    try {
+      const updated = await updateMatchPreset(selectedPreset.id, {
+        name: selectedPreset.name,
+        weights: selectedPreset.weights,
+      })
+      setPresets((prev) => prev.map((preset) => (preset.id === updated.id ? { ...preset, ...updated } : preset)))
+      toast({ title: '프리셋 저장 완료', description: `${updated.name ?? '매칭 프리셋'} 설정이 저장되었습니다.` })
+    } catch (error) {
+      const ax = error as AxiosError | undefined
+      const message = (ax?.response?.data as any)?.message || ax?.message || '프리셋 저장 중 오류가 발생했습니다.'
+      toast({ title: '프리셋 저장 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
+    } finally {
+      setIsSavingPreset(false)
     }
-    setPresets((prev) => [...prev, clone])
-    setSelectedPresetId(id)
-    toast({ title: '프리셋 복제', description: `${clone.name}이 생성되었습니다.` })
   }
+
+  const handleActivatePreset = async (presetId: string) => {
+    setIsActivatingPreset(true)
+    try {
+      const activated = await activateMatchPreset(presetId)
+      setPresets((prev) => prev.map((preset) => ({ ...preset, isActive: preset.id === activated.id })))
+      setSelectedPresetId(activated.id)
+      toast({ title: '프리셋 활성화', description: `${activated.name ?? '선택한 프리셋'}이 실 서비스에 적용되었습니다.` })
+    } catch (error) {
+      const ax = error as AxiosError | undefined
+      const message =
+        (ax?.response?.data as any)?.message || ax?.message || '프리셋 활성화 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.'
+      toast({ title: '프리셋 활성화 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
+    } finally {
+      setIsActivatingPreset(false)
+    }
+  }
+
+  const handleDuplicatePreset = async () => {
+    if (!selectedPreset) return
+    setIsDuplicatingPreset(true)
+    try {
+      const cloned = await duplicateMatchPreset(selectedPreset.id)
+      setPresets((prev) => [...prev, cloned])
+      setSelectedPresetId(cloned.id)
+      toast({ title: '프리셋 사본 생성', description: `${cloned.name ?? '새 프리셋'}이 목록에 추가되었습니다.` })
+    } catch (error) {
+      const ax = error as AxiosError | undefined
+      const message =
+        (ax?.response?.data as any)?.message || ax?.message || '프리셋을 복제하지 못했습니다. 권한을 확인한 뒤 다시 시도하세요.'
+      toast({ title: '프리셋 복제 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
+    } finally {
+      setIsDuplicatingPreset(false)
+    }
+  }
+
+  const handleAddFilter = async () => {
+    if (!newFilter.label.trim()) {
+      toast({ title: '필터 이름 필요', description: '슬롯에 표시할 문구를 입력해주세요.', variant: 'destructive' })
+      return
+    }
+    setIsAddingFilter(true)
+    try {
+      const created = await createMatchQuickFilter({
+        label: newFilter.label.trim(),
+        segment: newFilter.segment,
+        description: newFilter.description.trim() || undefined,
+      })
+      setQuickFilters((prev) => [created, ...prev])
+      setNewFilter({ label: '', segment: newFilter.segment as SegmentValue, description: '' })
+      toast({ title: '빠른 필터 추가', description: `${created.label ?? '새 필터'}가 홈 탐색에 노출될 준비가 되었습니다.` })
+    } catch (error) {
+      const ax = error as AxiosError | undefined
+      const message =
+        (ax?.response?.data as any)?.message || ax?.message || '필터를 저장하지 못했습니다. 잠시 후 다시 시도해주세요.'
+      toast({ title: '필터 추가 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
+    } finally {
+      setIsAddingFilter(false)
+    }
+  }
+
+  const handleRemoveFilter = async (filterId: string) => {
+    setRemovingFilterId(filterId)
+    try {
+      await deleteMatchQuickFilter(filterId)
+      setQuickFilters((prev) => prev.filter((filter) => filter.id !== filterId))
+      toast({ title: '필터 삭제', description: '해당 빠른 필터가 탐색 화면에서 제거됩니다.' })
+    } catch (error) {
+      const ax = error as AxiosError | undefined
+      const message = (ax?.response?.data as any)?.message || ax?.message || '필터 삭제에 실패했습니다.'
+      toast({ title: '필터 삭제 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
+    } finally {
+      setRemovingFilterId(null)
+    }
+  }
+
+  const handleUpdatePool = async (id: string, payload: Partial<MatchRecommendationPool>) => {
+    setUpdatingPoolId(id)
+    try {
+      const updated = await updateMatchRecommendationPool(id, payload)
+      setRecommendationPools((prev) => prev.map((pool) => (pool.id === updated.id ? { ...pool, ...updated } : pool)))
+      toast({ title: '추천 풀 저장', description: `${updated.title ?? '추천 풀'} 설정이 업데이트되었습니다.` })
+    } catch (error) {
+      const ax = error as AxiosError | undefined
+      const message = (ax?.response?.data as any)?.message || ax?.message || '추천 풀 정보를 저장하지 못했습니다.'
+      toast({ title: '추천 풀 저장 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
+    } finally {
+      setUpdatingPoolId(null)
+    }
+  }
+
+  const handleHeatMemoBlur = async () => {
+    if (heatSummaryMemo.trim() === initialHeatMemo.trim()) return
+    setIsSavingHeatMemo(true)
+    try {
+      const saved = await saveMatchHeatMemo({ memo: heatSummaryMemo })
+      setInitialHeatMemo(saved)
+      toast({ title: '지역 메모 저장', description: '히트맵 메모가 저장되었습니다.' })
+    } catch (error) {
+      const ax = error as AxiosError | undefined
+      const message = (ax?.response?.data as any)?.message || ax?.message || '메모를 저장하지 못했습니다.'
+      toast({ title: '메모 저장 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
+    } finally {
+      setIsSavingHeatMemo(false)
+    }
+  }
+
+  const presetTotal = sumWeights(selectedPreset)
 
   return (
     <div className="grid gap-6 xl:grid-cols-[3fr_2fr]">
       <section className="space-y-4">
         <Card>
-          <CardHeader>
-            <CardTitle>실시간 매칭 대기열</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              세그먼트별 대기 시간과 이탈률을 확인해 운영자 투입 여부를 판단합니다.
-            </p>
+          <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle>실시간 매칭 대기열</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                세그먼트별 대기 시간과 이탈률을 확인해 누구나 쉽게 운영 대응을 결정할 수 있도록 정리했습니다.
+              </p>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => void loadSnapshot()} disabled={isLoadingSnapshot}>
+              {isLoadingSnapshot ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCcw className="mr-2 h-4 w-4" />}
+              새로고침
+            </Button>
           </CardHeader>
           <CardContent>
             <div className="max-h-[320px] overflow-y-auto rounded-md border">
@@ -203,14 +380,21 @@ export default function MatchesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {QUEUE_STATS.map((row) => (
+                  {queueStats.map((row) => (
                     <tr key={row.id} className="border-t">
-                      <td className="px-4 py-2 font-semibold">{row.segment}</td>
-                      <td className="px-4 py-2">{row.waiting.toLocaleString()}명</td>
-                      <td className="px-4 py-2">{row.medianWait}</td>
-                      <td className="px-4 py-2 text-red-600">{row.dropOffRate}</td>
+                      <td className="px-4 py-2 font-semibold">{row.segment ?? '미지정'}</td>
+                      <td className="px-4 py-2">{formatNumber(row.waiting)}명</td>
+                      <td className="px-4 py-2">{row.medianWait ?? '-'}</td>
+                      <td className="px-4 py-2 text-red-600">{row.dropOffRate ?? '-'}</td>
                     </tr>
                   ))}
+                  {queueStats.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-6 text-center text-muted-foreground">
+                        표시할 대기열 데이터가 없습니다.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -221,7 +405,7 @@ export default function MatchesPage() {
           <CardHeader>
             <CardTitle>AI 추천 가중치 프리셋</CardTitle>
             <p className="text-sm text-muted-foreground">
-              거리·관심사·AI 적합도·최근 활동 비중을 조절해 매칭 품질을 실험합니다.
+              거리·관심사·AI 적합도·최근 활동 비중을 슬라이더 대신 숫자로 조정해 가중치를 쉽게 비교하세요.
             </p>
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
@@ -233,19 +417,27 @@ export default function MatchesPage() {
                 <SelectContent>
                   {presets.map((preset) => (
                     <SelectItem key={preset.id} value={preset.id}>
-                      {preset.name} {preset.isActive ? '(사용중)' : ''}
+                      {preset.name ?? '이름 없는 프리셋'} {preset.isActive ? '(사용 중)' : ''}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" onClick={duplicatePreset}>
+                <Button size="sm" variant="outline" onClick={handleDuplicatePreset} disabled={isDuplicatingPreset}>
+                  {isDuplicatingPreset && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   프리셋 복제
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => selectedPresetId && activatePreset(selectedPresetId)}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void handleActivatePreset(selectedPreset?.id ?? '')}
+                  disabled={!selectedPreset || isActivatingPreset}
+                >
+                  {isActivatingPreset && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   활성화
                 </Button>
-                <Button size="sm" onClick={savePreset}>
+                <Button size="sm" onClick={handleSavePreset} disabled={!selectedPreset || isSavingPreset}>
+                  {isSavingPreset && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   저장
                 </Button>
               </div>
@@ -267,21 +459,19 @@ export default function MatchesPage() {
                       type="number"
                       min={0}
                       max={100}
-                      value={selectedPreset.weights[item.key]}
-                      onChange={(event) => updatePresetWeight(item.key, Number(event.target.value) || 0)}
+                      value={selectedPreset.weights[item.key] ?? 0}
+                      onChange={(event) => updatePresetWeight(item.key, Number(event.target.value))}
                     />
                   </div>
                 ))}
                 <div className="md:col-span-2 rounded-md border p-3 text-xs text-muted-foreground">
-                  <p>작성자: {selectedPreset.author}</p>
-                  <p>생성일: {selectedPreset.createdAt}</p>
-                  <p>
-                    총합: {Object.values(selectedPreset.weights).reduce((sum, curr) => sum + curr, 0)} (권장 100)
-                  </p>
+                  <p>작성자: {selectedPreset.author ?? '미지정'}</p>
+                  <p>생성일: {selectedPreset.createdAt ?? '-'}</p>
+                  <p>총합: {presetTotal} (권장 100)</p>
                 </div>
               </div>
             ) : (
-              <p className="text-muted-foreground">편집할 프리셋이 없습니다.</p>
+              <p className="text-muted-foreground">편집할 프리셋이 없습니다. 먼저 프리셋을 추가해주세요.</p>
             )}
           </CardContent>
         </Card>
@@ -292,7 +482,7 @@ export default function MatchesPage() {
           <CardHeader>
             <CardTitle>홈 탐색 빠른 필터</CardTitle>
             <p className="text-sm text-muted-foreground">
-              탐색 화면의 2×4 슬롯을 구성해 실험별 노출 전략을 관리합니다.
+              탐색 화면에 표시되는 버튼을 손쉽게 추가·삭제하여 누구나 원하는 실험을 진행할 수 있습니다.
             </p>
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
@@ -309,16 +499,17 @@ export default function MatchesPage() {
                 <Label>세그먼트</Label>
                 <Select
                   value={newFilter.segment}
-                  onValueChange={(value: QuickFilter['segment']) => setNewFilter((prev) => ({ ...prev, segment: value }))}
+                  onValueChange={(value: SegmentValue) => setNewFilter((prev) => ({ ...prev, segment: value }))}
                 >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="접속중">접속중</SelectItem>
-                    <SelectItem value="가까운 거리">가까운 거리</SelectItem>
-                    <SelectItem value="연령대">연령대</SelectItem>
-                    <SelectItem value="의도">의도</SelectItem>
+                    {SEGMENT_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -331,7 +522,8 @@ export default function MatchesPage() {
                 />
               </div>
             </div>
-            <Button size="sm" onClick={addFilter}>
+            <Button size="sm" onClick={handleAddFilter} disabled={isAddingFilter}>
+              {isAddingFilter && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               빠른 필터 추가
             </Button>
 
@@ -346,22 +538,28 @@ export default function MatchesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filters.map((filter) => (
+                  {quickFilters.map((filter) => (
                     <tr key={filter.id} className="border-t">
-                      <td className="px-3 py-2 font-semibold">{filter.label}</td>
-                      <td className="px-3 py-2">{filter.segment}</td>
-                      <td className="px-3 py-2 text-muted-foreground">{filter.description}</td>
+                      <td className="px-3 py-2 font-semibold">{filter.label ?? '이름 없음'}</td>
+                      <td className="px-3 py-2">{filter.segment ?? '-'}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{filter.description ?? '-'}</td>
                       <td className="px-3 py-2">
-                        <Button size="sm" variant="outline" onClick={() => removeFilter(filter.id)}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void handleRemoveFilter(filter.id)}
+                          disabled={removingFilterId === filter.id}
+                        >
+                          {removingFilterId === filter.id && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                           삭제
                         </Button>
                       </td>
                     </tr>
                   ))}
-                  {filters.length === 0 && (
+                  {quickFilters.length === 0 && (
                     <tr>
                       <td colSpan={4} className="px-3 py-6 text-center text-muted-foreground">
-                        등록된 필터가 없습니다.
+                        등록된 필터가 없습니다. 위에서 필터를 추가해보세요.
                       </td>
                     </tr>
                   )}
@@ -375,38 +573,45 @@ export default function MatchesPage() {
           <CardHeader>
             <CardTitle>추천 풀 현황</CardTitle>
             <p className="text-sm text-muted-foreground">
-              HOT/Hype/근접 등 추천 풀의 정렬 로직과 지표를 업데이트합니다.
+              HOT/Hype/근접 등 추천 풀의 정렬 기준과 대표 지표를 수정하면 즉시 추천 결과에 반영됩니다.
             </p>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            {pools.map((pool) => (
+            {recommendationPools.map((pool) => (
               <div key={pool.id} className="rounded-md border p-3">
                 <div className="flex items-center justify-between text-sm font-semibold">
-                  <span>{pool.title}</span>
-                  <span className="text-muted-foreground">{pool.owner}</span>
+                  <span>{pool.title ?? '추천 풀'}</span>
+                  <span className="text-muted-foreground">{pool.owner ?? '-'}</span>
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">{pool.sortRule}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{pool.sortRule ?? '-'}</p>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <span className="rounded-full bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary">
-                    {pool.metrics}
+                    {pool.metrics ?? '지표 준비 중'}
                   </span>
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => updatePool(pool.id, { metrics: '업데이트 대기' })}
+                    onClick={() => void handleUpdatePool(pool.id, { metrics: '업데이트 대기' })}
+                    disabled={updatingPoolId === pool.id}
                   >
+                    {updatingPoolId === pool.id && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     지표 새로고침
                   </Button>
                 </div>
               </div>
             ))}
+            {recommendationPools.length === 0 && (
+              <p className="text-center text-muted-foreground">등록된 추천 풀이 없습니다.</p>
+            )}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
             <CardTitle>지역별 활성도 메모</CardTitle>
-            <p className="text-sm text-muted-foreground">히트맵 운영 시 참고할 수 있는 지역별 활성 현황입니다.</p>
+            <p className="text-sm text-muted-foreground">
+              히트맵에 반영할 지역별 특이사항을 기록해 팀원 누구나 동일한 정보를 공유할 수 있도록 돕습니다.
+            </p>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div className="max-h-[220px] overflow-y-auto rounded-md border">
@@ -420,16 +625,21 @@ export default function MatchesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {HEAT_REGIONS.map((region) => (
+                  {heatRegions.map((region) => (
                     <tr key={region.id} className="border-t">
-                      <td className="px-3 py-2 font-semibold">{region.name}</td>
-                      <td className="px-3 py-2">{region.activeUsers.toLocaleString()}명</td>
-                      <td className="px-3 py-2 text-red-600">{region.flagged}건</td>
-                      <td className="px-3 py-2 text-xs text-muted-foreground">
-                        {region.trend === 'UP' ? '상승' : region.trend === 'DOWN' ? '하락' : '유지'}
-                      </td>
+                      <td className="px-3 py-2 font-semibold">{region.name ?? '미지정 지역'}</td>
+                      <td className="px-3 py-2">{formatNumber(region.activeUsers)}명</td>
+                      <td className="px-3 py-2 text-red-600">{formatNumber(region.flagged)}건</td>
+                      <td className="px-3 py-2 text-xs text-muted-foreground">{trendLabel(region.trend)}</td>
                     </tr>
                   ))}
+                  {heatRegions.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="px-3 py-6 text-center text-muted-foreground">
+                        표시할 지역 데이터가 없습니다.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -437,9 +647,11 @@ export default function MatchesPage() {
             <Textarea
               value={heatSummaryMemo}
               onChange={(event) => setHeatSummaryMemo(event.target.value)}
+              onBlur={() => void handleHeatMemoBlur()}
               rows={3}
               placeholder="히트맵에 반영할 추가 메모를 남겨주세요."
             />
+            {isSavingHeatMemo && <p className="text-xs text-muted-foreground">메모를 저장하고 있습니다…</p>}
           </CardContent>
         </Card>
       </section>
