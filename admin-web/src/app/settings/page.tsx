@@ -5,6 +5,13 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -19,19 +26,17 @@ import {
   updateAdminFeatureFlag,
   updateAdminIntegrationSetting,
   updateAdminTeamMember,
+  updateAdminTeamMemberPassword,
   type AdminFeatureFlag,
   type AdminIntegrationSetting,
   type AdminSettingsSnapshot,
   type AdminTeamMember,
 } from '@/lib/api'
+import { AdminAuthError, ensureDefaultSuperAdminAccount, listAdminAccounts } from '@/lib/admin-auth'
 import type { AxiosError } from 'axios'
 
 const FALLBACK_SETTINGS: AdminSettingsSnapshot = {
-  members: [
-    { id: 'team-1', phoneNumber: '010-8000-1001', role: 'Super Admin', status: '활성', twoFactor: true },
-    { id: 'team-2', phoneNumber: '010-8000-1002', role: 'Customer Support', status: '활성', twoFactor: true },
-    { id: 'team-3', phoneNumber: '010-8000-1003', role: 'Safety Moderator', status: '활성', twoFactor: false },
-  ],
+  members: [],  members: [],
   featureFlags: [
     {
       id: 'flag-new-matching',
@@ -63,14 +68,54 @@ const FALLBACK_SETTINGS: AdminSettingsSnapshot = {
   auditMemo: '',
 }
 
+const PERMISSION_HINT = 'users.manage, reports.view'
+
+function mapAccountsToMembers(accounts: ReturnType<typeof listAdminAccounts>): AdminTeamMember[] {
+  return accounts.map((account) => ({
+    id: account.id,
+    email: account.email,
+    username: account.username,
+    name: account.name,
+    role: account.role,
+    status: account.status,
+    twoFactor: account.twoFactorEnabled,
+    permissions: [...account.permissions],
+    lastLoginAt: account.lastLoginAt,
+  }))
+}
+
+function parsePermissionInput(input: string | string[]): string[] {
+  if (Array.isArray(input)) {
+    return input.map((value) => value.trim()).filter((value) => value.length > 0)
+  }
+  return input
+    .split(/[,\n]/)
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+}
+
+function formatDateTime(value?: string) {
+  if (!value) return '기록 없음'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '기록 없음'
+  const pad = (num: number) => num.toString().padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
 export default function SettingsPage() {
   const { toast } = useToast()
 
+    const defaultMembers = useMemo(() => {
+    ensureDefaultSuperAdminAccount()
+    return mapAccountsToMembers(listAdminAccounts())
+  }, [])
+
+  const defaultPermissionText = PERMISSION_HINT
+
   const [isLoading, setIsLoading] = useState(false)
-  const [members, setMembers] = useState<AdminTeamMember[]>(FALLBACK_SETTINGS.members)
+  const [members, setMembers] = useState<AdminTeamMember[]>(defaultMembers)
   const [flags, setFlags] = useState<AdminFeatureFlag[]>(FALLBACK_SETTINGS.featureFlags)
   const [integrations, setIntegrations] = useState<AdminIntegrationSetting[]>(FALLBACK_SETTINGS.integrations)
-  const [manualPhoneNumber, setManualPhoneNumber] = useState('')
   const [auditLog, setAuditLog] = useState(FALLBACK_SETTINGS.auditMemo ?? '')
   const [initialAuditLog, setInitialAuditLog] = useState(FALLBACK_SETTINGS.auditMemo ?? '')
 
@@ -79,8 +124,58 @@ export default function SettingsPage() {
   const [savingIntegrationId, setSavingIntegrationId] = useState<string | null>(null)
   const [savingAuditLog, setSavingAuditLog] = useState(false)
 
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
+  const [isPermissionDialogOpen, setIsPermissionDialogOpen] = useState(false)
+  const [permissionDraft, setPermissionDraft] = useState('')
+  const [permissionTarget, setPermissionTarget] = useState<AdminTeamMember | null>(null)
+
+  const [passwordTarget, setPasswordTarget] = useState<AdminTeamMember | null>(null)
+  const [passwordDraft, setPasswordDraft] = useState('')
+  const [savingPassword, setSavingPassword] = useState(false)
+
+  const [newAdmin, setNewAdmin] = useState({
+    name: '',
+    email: '',
+    role: 'MANAGER',
+    status: 'ACTIVE',
+    password: '',
+    permissions: defaultPermissionText,
+    twoFactor: false,
+  })
+
+  const resetNewAdmin = () => {
+    setNewAdmin({
+      name: '',
+      email: '',
+      role: 'MANAGER',
+      status: 'ACTIVE',
+      password: '',
+      permissions: defaultPermissionText,
+      twoFactor: false,
+    })
+  }
+
+  const resolveRoleLabel = (value?: string) => teamRoles.find((role) => role.value === value)?.label ?? value ?? '역할 미정'
+  const resolveStatusLabel = (value?: string) =>
+    statusOptions.find((status) => status.value === value)?.label ?? value ?? '상태 미정'
+
   const teamRoles = useMemo(
-    () => ['Super Admin', 'Customer Support', 'Safety Moderator', 'Operations Manager'] as const,
+        () => [
+      { value: 'SUPER_ADMIN', label: '슈퍼 관리자' },
+      { value: 'MANAGER', label: '운영 매니저' },
+      { value: 'MODERATOR', label: '모더레이터' },
+      { value: 'SUPPORT', label: '고객 지원' },
+      { value: 'EDITOR', label: '콘텐츠 에디터' },
+      { value: 'VIEWER', label: '조회 전용' },
+    ],
+    []
+  )
+
+  const statusOptions = useMemo(
+    () => [
+      { value: 'ACTIVE', label: '활성' },
+      { value: 'SUSPENDED', label: '일시중지' },
+    ],
     []
   )
 
@@ -93,21 +188,31 @@ export default function SettingsPage() {
     setIsLoading(true)
     try {
       const snapshot = await getAdminSettingsSnapshot()
-      setMembers(snapshot.members.length > 0 ? snapshot.members : FALLBACK_SETTINGS.members)
+      const localMembers = snapshot.members.length > 0 ? snapshot.members : mapAccountsToMembers(listAdminAccounts())
+      setMembers(localMembers)
       setFlags(snapshot.featureFlags.length > 0 ? snapshot.featureFlags : FALLBACK_SETTINGS.featureFlags)
       setIntegrations(snapshot.integrations.length > 0 ? snapshot.integrations : FALLBACK_SETTINGS.integrations)
       setAuditLog(snapshot.auditMemo ?? '')
       setInitialAuditLog(snapshot.auditMemo ?? '')
     } catch (error) {
-      const ax = error as AxiosError | undefined
-      const message =
-        (ax?.response?.data as any)?.message || ax?.message || '설정 정보를 불러오지 못했습니다. 기본 예시를 보여드립니다.'
+      if (error instanceof AdminAuthError) {
+        toast({ title: '설정 데이터 불러오기 실패', description: error.message, variant: 'destructive' })
+      } else {
+        const ax = error as AxiosError | undefined
+        const message =
+          (ax?.response?.data as any)?.message || ax?.message || '설정 정보를 불러오지 못했습니다. 기본 예시를 보여드립니다.'
+        toast({
+          title: '설정 데이터 불러오기 실패',
+          description: Array.isArray(message) ? message.join(', ') : String(message),
+          variant: 'destructive',
+        })
+      }
+      const localMembers = mapAccountsToMembers(listAdminAccounts())
+      setMembers(localMembers.length > 0 ? localMembers : defaultMembers)
       toast({
-        title: '설정 데이터 불러오기 실패',
-        description: Array.isArray(message) ? message.join(', ') : String(message),
-        variant: 'destructive',
+        title: '로컬 예시 데이터 사용',
+        description: 'API 연결 대신 저장된 관리자 계정 정보를 표시합니다.',
       })
-      setMembers(FALLBACK_SETTINGS.members)
       setFlags(FALLBACK_SETTINGS.featureFlags)
       setIntegrations(FALLBACK_SETTINGS.integrations)
       setAuditLog(FALLBACK_SETTINGS.auditMemo ?? '')
@@ -118,21 +223,38 @@ export default function SettingsPage() {
   }
 
   const createMember = async () => {
-    const phone = manualPhoneNumber.trim()
-    if (!phone) {
-      toast({ title: '휴대폰 번호 필요', description: '추가할 휴대폰 번호를 입력하세요.', variant: 'destructive' })
+    const email = newAdmin.email.trim()
+    const password = newAdmin.password.trim()
+    if (!email || !password) {
+      toast({ title: '아이디와 비밀번호 필요', description: '부관리자 아이디(이메일)와 초기 비밀번호를 입력하세요.', variant: 'destructive' })
       return
     }
     setSavingMemberId('create')
     try {
-      const created = await createAdminTeamMember({ phoneNumber: phone, role: 'Tester', status: '활성' })
+      const created = await createAdminTeamMember({
+        email,
+        name: newAdmin.name.trim() || email,
+        role: newAdmin.role,
+        status: newAdmin.status,
+        password,
+        permissions: parsePermissionInput(newAdmin.permissions),
+        twoFactor: newAdmin.twoFactor,
+      })
       setMembers((prev) => [created, ...prev])
-      setManualPhoneNumber('')
-      toast({ title: '계정 추가', description: `${created.phoneNumber ?? phone} 운영자 계정을 생성했습니다.` })
+      toast({
+        title: '부관리자 생성',
+        description: `${created.name ?? created.email ?? email} 계정을 추가했습니다.`,
+      })
+      resetNewAdmin()
+      setIsCreateDialogOpen(false)
     } catch (error) {
-      const ax = error as AxiosError | undefined
-      const message = (ax?.response?.data as any)?.message || ax?.message || '운영자 계정을 추가하지 못했습니다.'
-      toast({ title: '추가 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
+      if (error instanceof AdminAuthError) {
+        toast({ title: '추가 실패', description: error.message, variant: 'destructive' })
+      } else {
+        const ax = error as AxiosError | undefined
+        const message = (ax?.response?.data as any)?.message || ax?.message || '운영자 계정을 추가하지 못했습니다.'
+        toast({ title: '추가 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
+      }
     } finally {
       setSavingMemberId(null)
     }
@@ -142,12 +264,20 @@ export default function SettingsPage() {
     setSavingMemberId(id)
     try {
       const updated = await updateAdminTeamMember(id, { role })
-      setMembers((prev) => prev.map((member) => (member.id === id ? { ...member, ...updated } : member)))
-      toast({ title: '역할 변경', description: `${updated.phoneNumber ?? '운영자'}의 역할을 ${updated.role}로 저장했습니다.` })
+      const nextRole = updated?.role ?? (typeof role === 'string' ? role : undefined)
+      setMembers((prev) => prev.map((member) => (member.id === id ? { ...member, ...updated, role: nextRole } : member)))
+      toast({
+        title: '역할 변경',
+        description: `${updated?.name ?? updated?.email ?? '운영자'}의 역할을 ${resolveRoleLabel(nextRole)}로 저장했습니다.`,
+      })
     } catch (error) {
-      const ax = error as AxiosError | undefined
-      const message = (ax?.response?.data as any)?.message || ax?.message || '역할을 변경하지 못했습니다.'
-      toast({ title: '역할 변경 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
+      if (error instanceof AdminAuthError) {
+        toast({ title: '역할 변경 실패', description: error.message, variant: 'destructive' })
+      } else {
+        const ax = error as AxiosError | undefined
+        const message = (ax?.response?.data as any)?.message || ax?.message || '역할을 변경하지 못했습니다.'
+        toast({ title: '역할 변경 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
+      }
     } finally {
       setSavingMemberId(null)
     }
@@ -157,12 +287,17 @@ export default function SettingsPage() {
     setSavingMemberId(id)
     try {
       const updated = await updateAdminTeamMember(id, { status })
-      setMembers((prev) => prev.map((member) => (member.id === id ? { ...member, ...updated } : member)))
-      toast({ title: '상태 변경', description: `${updated.phoneNumber ?? '운영자'}의 상태를 ${updated.status}로 저장했습니다.` })
+      const nextStatus = updated?.status ?? (typeof status === 'string' ? status : undefined)
+      setMembers((prev) => prev.map((member) => (member.id === id ? { ...member, ...updated, status: nextStatus } : member)))
+      toast({ title: '상태 변경', description: `${updated?.name ?? updated?.email ?? '운영자'}의 상태를 ${resolveStatusLabel(nextStatus)}로 저장했습니다.` })
     } catch (error) {
-      const ax = error as AxiosError | undefined
-      const message = (ax?.response?.data as any)?.message || ax?.message || '상태를 변경하지 못했습니다.'
-      toast({ title: '상태 변경 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
+      if (error instanceof AdminAuthError) {
+        toast({ title: '상태 변경 실패', description: error.message, variant: 'destructive' })
+      } else {
+        const ax = error as AxiosError | undefined
+        const message = (ax?.response?.data as any)?.message || ax?.message || '상태를 변경하지 못했습니다.'
+        toast({ title: '상태 변경 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
+      }
     } finally {
       setSavingMemberId(null)
     }
@@ -172,38 +307,134 @@ export default function SettingsPage() {
     setSavingMemberId(id)
     try {
       const updated = await updateAdminTeamMember(id, { twoFactor: enabled })
-      setMembers((prev) => prev.map((member) => (member.id === id ? { ...member, ...updated } : member)))
-      toast({
+      setMembers((prev) => prev.map((member) => (member.id === id ? { ...member, ...updated, twoFactor: enabled } : member)))      toast({
+       toast({
         title: '2단계 인증 업데이트',
-        description: `${updated.phoneNumber ?? '운영자'}의 2FA 설정이 ${updated.twoFactor ? '활성화' : '비활성화'}되었습니다.`,
+        description: `${updated?.name ?? updated?.email ?? '운영자'}의 2FA 설정이 ${updated?.twoFactor ? '활성화' : '비활성화'}되었습니다.`,
       })
     } catch (error) {
-      const ax = error as AxiosError | undefined
-      const message = (ax?.response?.data as any)?.message || ax?.message || '2FA 상태를 변경하지 못했습니다.'
-      toast({ title: '2FA 변경 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
+      if (error instanceof AdminAuthError) {
+        toast({ title: '2FA 변경 실패', description: error.message, variant: 'destructive' })
+      } else {
+        const ax = error as AxiosError | undefined
+        const message = (ax?.response?.data as any)?.message || ax?.message || '2FA 상태를 변경하지 못했습니다.'
+        toast({ title: '2FA 변경 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
+      }
     } finally {
       setSavingMemberId(null)
     }
   }
 
-  const removeMember = async (id: string, phoneNumber?: string) => {
+  const removeMember = async (member: AdminTeamMember) => {
+    if (member.role === 'SUPER_ADMIN') {
+      toast({ title: '삭제 불가', description: '최초 슈퍼 관리자는 삭제할 수 없습니다.', variant: 'destructive' })
+      return
+    }
     if (typeof window !== 'undefined') {
-      const label = phoneNumber ?? '운영자'
+      const label = member.name ?? member.email ?? '운영자'
       if (!window.confirm(`${label} 계정을 삭제하시겠습니까?`)) {
         return
       }
     }
-    setSavingMemberId(id)
+    setSavingMemberId(member.id)
     try {
-      await deleteAdminTeamMember(id)
-      setMembers((prev) => prev.filter((member) => member.id !== id))
-      toast({ title: '계정 삭제', description: `${phoneNumber ?? '운영자'} 계정을 삭제했습니다.` })
+      await deleteAdminTeamMember(member.id)
+      setMembers((prev) => prev.filter((item) => item.id !== member.id))
+      toast({ title: '계정 삭제', description: `${member.name ?? member.email ?? '운영자'} 계정을 삭제했습니다.` })
     } catch (error) {
-      const ax = error as AxiosError | undefined
-      const message = (ax?.response?.data as any)?.message || ax?.message || '계정을 삭제하지 못했습니다.'
-      toast({ title: '삭제 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
+      if (error instanceof AdminAuthError) {
+        toast({ title: '삭제 실패', description: error.message, variant: 'destructive' })
+      } else {
+        const ax = error as AxiosError | undefined
+        const message = (ax?.response?.data as any)?.message || ax?.message || '계정을 삭제하지 못했습니다.'
+        toast({ title: '삭제 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
+      }
     } finally {
       setSavingMemberId(null)
+    }
+  }
+
+  const openPermissionDialog = (member: AdminTeamMember) => {
+    setPermissionTarget(member)
+    const text = (member.permissions ?? []).join(', ')
+    setPermissionDraft(text || defaultPermissionText)
+    setIsPermissionDialogOpen(true)
+  }
+
+  const savePermissions = async () => {
+    if (!permissionTarget) return
+    const permissions = parsePermissionInput(permissionDraft)
+    setSavingMemberId(permissionTarget.id)
+    try {
+      const updated = await updateAdminTeamMember(permissionTarget.id, { permissions })
+      setMembers((prev) =>
+        prev.map((member) =>
+          member.id === permissionTarget.id
+            ? { ...member, ...updated, permissions }
+            : member
+        )
+      )
+      toast({ title: '권한 업데이트', description: `${permissionTarget.name ?? permissionTarget.email ?? '운영자'}의 권한을 저장했습니다.` })
+      setIsPermissionDialogOpen(false)
+      setPermissionTarget(null)
+    } catch (error) {
+      if (error instanceof AdminAuthError) {
+        toast({ title: '권한 저장 실패', description: error.message, variant: 'destructive' })
+      } else {
+        const ax = error as AxiosError | undefined
+        const message = (ax?.response?.data as any)?.message || ax?.message || '권한을 저장하지 못했습니다.'
+        toast({ title: '권한 저장 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
+      }
+    } finally {
+      setSavingMemberId(null)
+    }
+  }
+
+  const closePermissionDialog = () => {
+    setIsPermissionDialogOpen(false)
+    setPermissionTarget(null)
+    setPermissionDraft('')
+  }
+
+  const openPasswordDialog = (member: AdminTeamMember) => {
+    setPasswordTarget(member)
+    setPasswordDraft('')
+  }
+
+  const closePasswordDialog = () => {
+    setPasswordTarget(null)
+    setPasswordDraft('')
+    setSavingPassword(false)
+  }
+
+  const savePassword = async () => {
+    if (!passwordTarget) return
+    const password = passwordDraft.trim()
+    if (password.length < 8) {
+      toast({ title: '비밀번호 조건 미달', description: '비밀번호는 최소 8자 이상이어야 합니다.', variant: 'destructive' })
+      return
+    }
+    setSavingPassword(true)
+    try {
+      const updated = await updateAdminTeamMemberPassword(passwordTarget.id, { password })
+      toast({
+        title: '비밀번호 재설정 완료',
+        description: `${passwordTarget.name ?? passwordTarget.email ?? '운영자'}의 비밀번호를 업데이트했습니다.`,
+      })
+      if (updated) {
+        setMembers((prev) => prev.map((member) => (member.id === passwordTarget.id ? { ...member, ...updated } : member)))
+      }
+      closePasswordDialog()
+    } catch (error) {
+      if (error instanceof AdminAuthError) {
+        toast({ title: '비밀번호 변경 실패', description: error.message, variant: 'destructive' })
+      } else {
+        const ax = error as AxiosError | undefined
+        const message = (ax?.response?.data as any)?.message || ax?.message || '비밀번호를 변경하지 못했습니다.'
+        toast({ title: '비밀번호 변경 실패', description: Array.isArray(message) ? message.join(', ') : String(message), variant: 'destructive' })
+      }
+    } finally {
+      setSavingPassword(false)
     }
   }
 
@@ -277,58 +508,188 @@ export default function SettingsPage() {
     <div className="grid gap-6 xl:grid-cols-[2fr_3fr]">
       <section className="space-y-4">
         <Card>
-          <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <CardTitle>팀 관리 & 권한</CardTitle>
               <p className="text-sm text-muted-foreground">
-                휴대폰 번호 기반의 운영자 계정을 수동으로 추가·삭제하고 역할과 권한을 즉시 조정하세요.
+                관리자 아이디와 권한을 이메일 기반으로 관리하고, 부관리자 계정을 생성하거나 비밀번호를 재설정하세요.
               </p>
             </div>
-            <Button size="sm" variant="outline" onClick={() => void loadSettings()} disabled={isLoading}>
-              새로고침
-            </Button>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="flex flex-col gap-2 md:flex-row">
-              <Input
-                placeholder="010-0000-0000"
-                value={manualPhoneNumber}
-                onChange={(event) => setManualPhoneNumber(event.target.value)}
-                inputMode="tel"
-              />
-              <Button size="sm" onClick={() => void createMember()} disabled={savingMemberId === 'create'}>
-                수동 추가
+            <div className="flex flex-wrap items-center gap-2">
+              <Dialog
+                open={isCreateDialogOpen}
+                onOpenChange={(open) => {
+                  setIsCreateDialogOpen(open)
+                  if (!open) {
+                    resetNewAdmin()
+                  }
+                }}
+              >
+                <DialogTrigger asChild>
+                  <Button size="sm" disabled={savingMemberId === 'create'}>
+                    새 부관리자 추가
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-h-[90vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle>부관리자 계정 생성</DialogTitle>
+                  </DialogHeader>
+                  <div className="grid gap-3 text-sm">
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="new-admin-name">이름</Label>
+                      <Input
+                        id="new-admin-name"
+                        value={newAdmin.name}
+                        onChange={(event) => setNewAdmin((prev) => ({ ...prev, name: event.target.value }))}
+                        placeholder="홍길동"
+                      />
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="new-admin-email">아이디 (이메일)</Label>
+                      <Input
+                        id="new-admin-email"
+                        type="email"
+                        value={newAdmin.email}
+                        onChange={(event) => setNewAdmin((prev) => ({ ...prev, email: event.target.value }))}
+                        placeholder="manager@example.com"
+                        autoComplete="off"
+                      />
+                    </div>
+                    <div className="grid gap-1.5 md:grid-cols-2 md:gap-3">
+                      <div className="grid gap-1.5">
+                        <Label htmlFor="new-admin-role">역할</Label>
+                        <Select
+                          value={newAdmin.role}
+                          onValueChange={(value) => setNewAdmin((prev) => ({ ...prev, role: value }))}
+                        >
+                          <SelectTrigger id="new-admin-role" className="text-xs">
+                            <SelectValue placeholder="역할 선택" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {teamRoles.map((role) => (
+                              <SelectItem key={role.value} value={role.value}>
+                                {role.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid gap-1.5">
+                        <Label htmlFor="new-admin-status">상태</Label>
+                        <Select
+                          value={newAdmin.status}
+                          onValueChange={(value) => setNewAdmin((prev) => ({ ...prev, status: value }))}
+                        >
+                          <SelectTrigger id="new-admin-status" className="text-xs">
+                            <SelectValue placeholder="상태 선택" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {statusOptions.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="new-admin-password">초기 비밀번호</Label>
+                      <Input
+                        id="new-admin-password"
+                        type="password"
+                        value={newAdmin.password}
+                        onChange={(event) => setNewAdmin((prev) => ({ ...prev, password: event.target.value }))}
+                        placeholder="최소 8자 이상"
+                        autoComplete="new-password"
+                      />
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="new-admin-permissions">권한 (콤마 또는 줄바꿈으로 구분)</Label>
+                      <Textarea
+                        id="new-admin-permissions"
+                        value={newAdmin.permissions}
+                        onChange={(event) => setNewAdmin((prev) => ({ ...prev, permissions: event.target.value }))}
+                        rows={3}
+                        placeholder={PERMISSION_HINT}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between rounded-md border px-3 py-2 text-xs">
+                      <div>
+                        <div className="font-medium">2단계 인증</div>
+                        <p className="text-muted-foreground">보안 강화를 위해 SMS 또는 OTP 추가 인증을 요구합니다.</p>
+                      </div>
+                      <Switch
+                        checked={newAdmin.twoFactor}
+                        onCheckedChange={(value) => setNewAdmin((prev) => ({ ...prev, twoFactor: value }))}
+                      />
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          resetNewAdmin()
+                          setIsCreateDialogOpen(false)
+                        }}
+                      >
+                        취소
+                      </Button>
+                      <Button type="button" onClick={() => void createMember()} disabled={savingMemberId === 'create'}>
+                        {savingMemberId === 'create' ? '생성 중…' : '계정 생성'}
+                      </Button>
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
+              <Button size="sm" variant="outline" onClick={() => void loadSettings()} disabled={isLoading}>
+                새로고침
               </Button>
             </div>
-
-            <div className="max-h-[320px] overflow-y-auto rounded-md border">
-              <table className="w-full text-left text-sm">
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <div className="overflow-x-auto rounded-md border">
+              <table className="w-full min-w-[720px] text-left text-sm">
                 <thead className="sticky top-0 bg-muted">
                   <tr>
-                    <th className="px-3 py-2 font-medium">휴대폰 번호</th>
+                    <th className="px-3 py-2 font-medium">이름 / 아이디</th>
                     <th className="px-3 py-2 font-medium">역할</th>
                     <th className="px-3 py-2 font-medium">상태</th>
+                    <th className="px-3 py-2 font-medium">권한</th>
                     <th className="px-3 py-2 font-medium">2FA</th>
+                    <th className="px-3 py-2 font-medium">최근 로그인</th>
                     <th className="px-3 py-2 font-medium text-right">관리</th>
                   </tr>
                 </thead>
                 <tbody>
+                {members.length === 0 && (
+                    <tr>
+                      <td className="px-3 py-6 text-center text-xs text-muted-foreground" colSpan={7}>
+                        아직 등록된 관리자가 없습니다. &quot;새 부관리자 추가&quot; 버튼으로 첫 계정을 생성하세요.
+                      </td>
+                    </tr>
+                  )}
                   {members.map((member) => (
-                    <tr key={member.id} className="border-t">
-                      <td className="px-3 py-2 font-semibold">{member.phoneNumber ?? '번호 미등록'}</td>
+                    <tr key={member.id} className="border-t align-top">
+                      <td className="px-3 py-2">
+                        <div className="flex flex-col">
+                          <span className="font-semibold">{member.name ?? member.email ?? '이름 미등록'}</span>
+                          <span className="text-xs text-muted-foreground">{member.email ?? '이메일 미등록'}</span>
+                        </div>
+                      </td>
                       <td className="px-3 py-2">
                         <Select
-                          value={member.role ?? ''}
+                          value={member.role ?? 'VIEWER'}
                           onValueChange={(value: AdminTeamMember['role']) => void updateMemberRole(member.id, value)}
                           disabled={savingMemberId === member.id}
                         >
-                          <SelectTrigger className="w-[190px] text-xs">
-                            <SelectValue />
+                          <SelectTrigger className="w-[180px] text-xs">
+                            <SelectValue placeholder="역할 선택" />
                           </SelectTrigger>
                           <SelectContent>
                             {teamRoles.map((role) => (
-                              <SelectItem key={role} value={role}>
-                                {role}
+                              <SelectItem key={role.value} value={role.value}>
+                                {role.label}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -336,18 +697,39 @@ export default function SettingsPage() {
                       </td>
                       <td className="px-3 py-2">
                         <Select
-                          value={member.status ?? '활성'}
+                          value={member.status ?? 'ACTIVE'}
                           onValueChange={(value: AdminTeamMember['status']) => void updateMemberStatus(member.id, value)}
                           disabled={savingMemberId === member.id}
                         >
-                          <SelectTrigger className="w-[120px] text-xs">
-                            <SelectValue />
+                          <SelectTrigger className="w-[130px] text-xs">
+                            <SelectValue placeholder="상태" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="활성">활성</SelectItem>
-                            <SelectItem value="일시중지">일시중지</SelectItem>
+                            {statusOptions.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex flex-col gap-1">
+                          <span className="text-xs text-muted-foreground">
+                            {member.permissions && member.permissions.length > 0
+                              ? member.permissions.join(', ')
+                              : '권한 미설정'}
+                          </span>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openPermissionDialog(member)}
+                            disabled={savingMemberId === member.id}
+                            className="w-fit text-xs"
+                          >
+                            권한 편집
+                          </Button>
+                        </div>
                       </td>
                       <td className="px-3 py-2 text-xs">
                         <Switch
@@ -356,22 +738,111 @@ export default function SettingsPage() {
                           onCheckedChange={(value) => void toggleTwoFactor(member.id, value)}
                         />
                       </td>
-                      <td className="px-3 py-2 text-right">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-destructive"
-                          onClick={() => void removeMember(member.id, member.phoneNumber)}
-                          disabled={savingMemberId === member.id}
-                        >
-                          삭제
-                        </Button>
+                      <td className="px-3 py-2 text-xs text-muted-foreground">{formatDateTime(member.lastLoginAt)}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openPasswordDialog(member)}
+                            disabled={savingPassword && passwordTarget?.id === member.id}
+                            className="text-xs"
+                          >
+                            비밀번호 초기화
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-destructive"
+                            onClick={() => void removeMember(member)}
+                            disabled={savingMemberId === member.id || member.role === 'SUPER_ADMIN'}
+                          >
+                            삭제
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            <p className="text-xs text-muted-foreground">* 권한은 콤마(,) 또는 줄바꿈으로 여러 개를 입력할 수 있습니다.</p>
+            <Dialog
+              open={isPermissionDialogOpen}
+              onOpenChange={(open) => {
+                if (!open) {
+                  closePermissionDialog()
+                }
+              }}
+            >
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>
+                    {permissionTarget?.name ?? permissionTarget?.email ?? '운영자'} 권한 편집
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-3 text-sm">
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="edit-permissions">권한 목록</Label>
+                    <Textarea
+                      id="edit-permissions"
+                      value={permissionDraft}
+                      onChange={(event) => setPermissionDraft(event.target.value)}
+                      rows={4}
+                      placeholder={PERMISSION_HINT}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      권한 키는 콤마(,) 또는 줄바꿈으로 구분합니다. 예: users.manage, reports.view
+                    </p>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button type="button" variant="outline" onClick={() => closePermissionDialog()}>
+                      취소
+                    </Button>
+                    <Button type="button" onClick={() => void savePermissions()} disabled={!permissionTarget}>
+                      저장
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+            <Dialog
+              open={Boolean(passwordTarget)}
+              onOpenChange={(open) => {
+                if (!open) {
+                  closePasswordDialog()
+                }
+              }}
+            >
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>
+                    {passwordTarget?.name ?? passwordTarget?.email ?? '운영자'} 비밀번호 재설정
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-3 text-sm">
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="reset-password">새 비밀번호</Label>
+                    <Input
+                      id="reset-password"
+                      type="password"
+                      value={passwordDraft}
+                      onChange={(event) => setPasswordDraft(event.target.value)}
+                      placeholder="영문, 숫자 조합 8자 이상"
+                      autoComplete="new-password"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button type="button" variant="outline" onClick={() => closePasswordDialog()}>
+                      취소
+                    </Button>
+                    <Button type="button" onClick={() => void savePassword()} disabled={savingPassword}>
+                      {savingPassword ? '저장 중…' : '비밀번호 저장'}
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
           </CardContent>
         </Card>
 
