@@ -25,6 +25,15 @@
    - 선물/아이템은 `GET /gifts` 응답(404 시 빈 배열)을 기반으로 목록을 구성하고, 필요한 CRUD 엔드포인트를 정의합니다. 【F:admin-web/src/lib/api.ts†L441-L482】
 4. **운영 수칙**: 관리자 UI 역시 `NEXT_PUBLIC_API_BASE_URL` 환경변수로 API 베이스를 설정하고, 배포 전 `/health` 체크와 토큰 만료 시나리오 QA를 수행합니다. 주요 지표 시각화가 필요하면 백엔드에 통계 엔드포인트를 명시적으로 요청합니다. 【F:admin-web/src/lib/api.ts†L25-L129】【F:admin-web/src/app/login/page.tsx†L24-L53】
 
+
+## 환경변수 및 보안 주의
+
+- `NEXT_PUBLIC_API_BASE_URL`: 관리자 콘솔이 호출할 백엔드 API의 기본 URL입니다. `.env.example`을 복사해 `.env`를 만들고 배포 환경에서는 플랫폼의 환경변수 설정에 값을 입력하세요.
+- 민감한 토큰·키·엔드포인트는 Git에 커밋하지 말고 환경변수로만 관리하세요. 레포에서 하드코딩된 값이 보이면 즉시 제거하고 TODO 주석을 확인하세요.
+- 로컬에서는 `.env` 파일을 `.gitignore`로 보호하고, 공유 저장소에 업로드하지 마세요.
+
+위 원칙을 지키면 `src/lib/api.ts`의 TODO 경고 없이 안전하게 API를 호출할 수 있습니다.
+
 ## 기술 스택
 
 - **API (tok‑friends)** : NestJS 10, Prisma ORM, PostgreSQL, JWT 인증, Swagger 문서화
