@@ -6,14 +6,29 @@ import axios, {
   isAxiosError,
 } from 'axios'
 
-const ENV_BASE = process.env.NEXT_PUBLIC_API_BASE_URL
+import { buildRoutePath } from './routeMap'
+import {
+  ensureStringId,
+  normalizeAdminUserDetail,
+  normalizeAdminUserSummaryList,
+  unwrapArray,
+} from './normalize'
+
+const ENV_BASE_CANDIDATES = [
+  process.env.NEXT_PUBLIC_API_URL,
+  process.env.NEXT_PUBLIC_API_BASE_URL,
+  process.env.REACT_APP_API_URL,
+  process.env.VITE_API_URL,
+].filter((value): value is string => Boolean(value && value.trim().length > 0))
+
 const FALLBACK_BASE = 'https://tok-friends-api.onrender.com'
-const RAW_BASE = (ENV_BASE && ENV_BASE.trim().length > 0 ? ENV_BASE : FALLBACK_BASE) as string
+const RAW_BASE = (ENV_BASE_CANDIDATES[0] ?? FALLBACK_BASE).trim()
 const API_BASE_URL = RAW_BASE.replace(/\/+$/, '')
 
 if (typeof window !== 'undefined') {
   // eslint-disable-next-line no-console
-  console.log('[TokFriends Admin] API_BASE_URL =', API_BASE_URL)
+  const source = ENV_BASE_CANDIDATES[0] ? 'env' : 'fallback'
+  console.log('[TokFriends Admin] API_BASE_URL =', API_BASE_URL, `(${source})`)
 }
 
 export const api = axios.create({
@@ -61,9 +76,14 @@ export function logoutToLogin() {
 
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = getAccessToken()
+  config.headers = config.headers || {}
+
   if (token) {
-    config.headers = config.headers || {}
     config.headers['Authorization'] = `Bearer ${token}`
+  }
+
+  if (!config.headers['Accept']) {
+    config.headers['Accept'] = config.responseType === 'blob' ? 'application/octet-stream' : 'application/json'
   }
 
   // 진단 로그: 토큰 부착 여부(앞 10자만)
@@ -132,7 +152,8 @@ export function saveLoginResult(payload: any) {
 
 // 대시보드 메트릭스
 export async function getDashboardMetrics() {
-  const res = await api.get('/metrics/dashboard')
+  const route = buildRoutePath('dashboard.metrics')
+  const res = await api.get(route)
   return res.data
 }
 
@@ -154,44 +175,20 @@ export interface LoginWithPhoneResponse {
 }
 
 export async function loginWithPhone(payload: LoginWithPhoneRequest) {
-  const response = await postForm<LoginWithPhoneResponse>('/auth/login/phone', payload)
+  const route = buildRoutePath('auth.login.phone')
+  const response = await postForm<LoginWithPhoneResponse>(route, payload)
   return response.data
 }
 
 export async function checkHealth() {
-  const response = await api.get('/health')
+  const route = buildRoutePath('auth.health')
+  const response = await api.get(route)
   return response.data
 }
 
 // ---------------------------------------------------------------------------
 // 유틸리티
 // ---------------------------------------------------------------------------
-
-const DEFAULT_ARRAY_KEYS = ['items', 'results', 'data', 'list', 'records']
-
-function unwrapArray<T>(payload: unknown, extraKeys: string[] = []): T[] {
-  if (Array.isArray(payload)) {
-    return payload as T[]
-  }
-
-  if (payload && typeof payload === 'object') {
-    const probeKeys = [...extraKeys, ...DEFAULT_ARRAY_KEYS]
-    for (const key of probeKeys) {
-      const value = (payload as Record<string, unknown>)[key]
-      if (Array.isArray(value)) {
-        return value as T[]
-      }
-    }
-  }
-
-  return []
-}
-
-function ensureStringId(value: unknown, fallbackPrefix: string) {
-  if (typeof value === 'string' && value.trim().length > 0) return value
-  if (typeof value === 'number') return String(value)
-  return `${fallbackPrefix}-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 6)}`
-}
 
 // ---------------------------------------------------------------------------
 // 사용자
@@ -227,23 +224,72 @@ export type UserDetail = UserSummary & {
 
 export type UserUpdatePayload = Record<string, unknown>
 
+function mapAdminUserSearchParams(params: UserSearchParams) {
+  const { query, phoneNumber, nickname, status, page, limit, ...rest } = params
+  const searchTerms = [query, phoneNumber, nickname]
+    .map((value) => (typeof value === 'string' ? value.trim() : ''))
+    .filter((value) => value.length > 0)
+
+  const mapped: Record<string, unknown> = { ...rest }
+
+  if (searchTerms.length > 0) {
+    mapped.search = searchTerms.join(' ')
+  }
+
+  if (status && status.trim().length > 0) {
+    mapped.status = status
+  }
+
+  if (typeof page === 'number') {
+    mapped.page = page
+  }
+
+  if (typeof limit === 'number') {
+    mapped.limit = limit
+  }
+
+  return mapped
+}
+
+function normalizeAdminUserUpdatePayload(payload: UserUpdatePayload) {
+  const body: Record<string, unknown> = { ...payload }
+
+  const booleanKeys = ['marketingOptIn', 'marketing_opt_in', 'verified', 'isActive', 'isBlocked']
+  for (const key of booleanKeys) {
+    const value = body[key]
+    if (typeof value === 'string') {
+      const lowered = value.trim().toLowerCase()
+      if (lowered === 'true') body[key] = true
+      else if (lowered === 'false') body[key] = false
+    }
+  }
+
+  if (typeof body.memo === 'string' && !body.auditMemo) {
+    body.auditMemo = body.memo
+  }
+
+  return body
+}
+
 export async function searchUsers(params: UserSearchParams = {}) {
-  const response = await api.get('/users/search', { params })
-  return unwrapArray<UserSummary>(response.data, ['users'])
+  const route = buildRoutePath('users.search')
+  const response = await api.get(route, { params: mapAdminUserSearchParams(params) })
+  const { items } = normalizeAdminUserSummaryList(response.data)
+  return items as UserSummary[]
 }
 
 export async function getUserById(userId: string) {
-  const response = await api.get(`/users/${userId}`)
-  const data = response.data as UserDetail
-  const id = ensureStringId(data?.id, 'user')
-  return { ...data, id }
+  const route = buildRoutePath('users.detail', { userId })
+  const response = await api.get(route)
+  const normalized = normalizeAdminUserDetail(response.data, userId)
+  return normalized as UserDetail
 }
 
 export async function updateUserProfile(userId: string, payload: UserUpdatePayload) {
-  const response = await api.patch(`/users/${userId}`, payload)
-  const data = response.data as UserDetail
-  const id = ensureStringId(data?.id ?? userId, 'user')
-  return { ...data, id }
+  const route = buildRoutePath('users.update', { userId })
+  const response = await api.patch(route, normalizeAdminUserUpdatePayload(payload))
+  const normalized = normalizeAdminUserDetail(response.data, userId)
+  return normalized as UserDetail
 }
 
 // ---------------------------------------------------------------------------
@@ -251,10 +297,11 @@ export async function updateUserProfile(userId: string, payload: UserUpdatePaylo
 // ---------------------------------------------------------------------------
 
 export interface ReportPayload {
-  type: string
+  type?: string
   reason: string
   reportedUserId?: string
   targetId?: string
+  postId?: string
   description?: string
   [key: string]: unknown
 }
@@ -266,12 +313,43 @@ export interface BlockPayload {
   [key: string]: unknown
 }
 
+function normalizeReportPayload(payload: ReportPayload) {
+  const body: Record<string, unknown> = {
+    reason: payload.reason,
+    description: payload.description,
+  }
+
+  const reportedUserId = payload.reportedUserId ?? payload.targetId
+  if (reportedUserId) {
+    body.targetUserId = reportedUserId
+  }
+
+  const postId = payload.postId ?? (payload.type === 'POST' ? payload.targetId : undefined)
+  if (postId) {
+    body.postId = postId
+  }
+
+  return body
+}
+
+function normalizeBlockPayload(payload: BlockPayload) {
+  const body: Record<string, unknown> = {
+    reason: payload.reason,
+    expiresAt: payload.expiresAt ?? undefined,
+    blockedUserId: payload.userId,
+  }
+
+  return body
+}
+
 export function submitUserReport(payload: ReportPayload) {
-  return api.post('/community/report', payload)
+  const route = buildRoutePath('community.report')
+  return api.post(route, normalizeReportPayload(payload))
 }
 
 export function submitUserBlock(payload: BlockPayload) {
-  return api.post('/community/block', payload)
+  const route = buildRoutePath('community.block')
+  return api.post(route, normalizeBlockPayload(payload))
 }
 
 // ---------------------------------------------------------------------------
