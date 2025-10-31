@@ -4,8 +4,8 @@
 
 export type HttpVerb = 'get' | 'post' | 'patch' | 'put' | 'delete'
 
-export interface RouteEntry {
-  key: RouteKey
+type RouteDefinition = {
+  key: string
   required: string
   actual: string
   method: HttpVerb
@@ -76,9 +76,10 @@ const routeMap = {
     method: 'post',
     description: '관리자 차단 등록.',
   },
-} as const satisfies Record<string, RouteEntry>
+} as const satisfies Record<string, RouteDefinition>
 
 export type RouteKey = keyof typeof routeMap
+export type RouteEntry = (typeof routeMap)[RouteKey]
 
 function replaceToken(path: string, token: string, value: string) {
   return path.replace(new RegExp(`:${token}\\b`, 'g'), value).replace(new RegExp(`{${token}}`, 'g'), value)
