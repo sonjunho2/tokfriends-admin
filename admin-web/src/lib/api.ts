@@ -6,6 +6,20 @@ import axios, {
   isAxiosError,
 } from 'axios'
 
+import {
+  AdminAuthError,
+  authenticateAdminAccount,
+  createAdminAccount,
+  deleteAdminAccount,
+  ensureDefaultSuperAdminAccount,
+  getAuditMemoSnapshot,
+  listAdminAccounts,
+  saveAuditMemoSnapshot,
+  updateAdminAccount,
+  updateAdminPassword,
+  type AdminAccount,
+} from './admin-auth'
+
 import { buildRoutePath } from './routeMap'
 import {
   ensureStringId,
@@ -162,12 +176,12 @@ export async function getDashboardMetrics() {
 // 인증 & 헬스체크
 // ---------------------------------------------------------------------------
 
-export interface LoginWithPhoneRequest {
-  phoneNumber: string
+export interface LoginWithEmailRequest {
+  email: string
   password: string
 }
 
-export interface LoginWithPhoneResponse {
+export interface LoginWithEmailResponse {
   access_token?: string
   token?: string
   refresh_token?: string
@@ -175,10 +189,36 @@ export interface LoginWithPhoneResponse {
   [key: string]: unknown
 }
 
-export async function loginWithPhone(payload: LoginWithPhoneRequest) {
-  const route = buildRoutePath('auth.login.phone')
-  const response = await postForm<LoginWithPhoneResponse>(route, payload)
-  return response.data
+export async function loginWithEmail(payload: LoginWithEmailRequest) {
+  const route = buildRoutePath('auth.login.email')
+  try {
+    const response = await postJson<LoginWithEmailResponse>(route, payload)
+    return response.data
+  } catch (error) {
+    if (isAxiosError(error)) {
+      try {
+        const result = authenticateAdminAccount(payload.email, payload.password)
+        return {
+          token: result.accessToken,
+          access_token: result.accessToken,
+          refresh_token: result.refreshToken,
+          user: {
+            id: result.account.id,
+            email: result.account.email,
+            name: result.account.name,
+            role: result.account.role,
+            permissions: result.account.permissions,
+            lastLoginAt: result.account.lastLoginAt,
+          },
+        }
+      } catch (authError) {
+        if (authError instanceof AdminAuthError) {
+          throw authError
+        }
+      }
+    }
+    throw error
+  }
 }
 
 export async function checkHealth() {
@@ -1318,10 +1358,15 @@ export async function createAnalyticsExport(payload: Record<string, unknown>) {
 
 export interface AdminTeamMember {
   id: string
+  email?: string
+  name?: string
+  username?: string
   phoneNumber?: string
   role?: string
   status?: string
   twoFactor?: boolean
+  permissions?: string[]
+  lastLoginAt?: string
   [key: string]: unknown
 }
 
@@ -1354,12 +1399,24 @@ function normalizeAdminSettings(payload: unknown): AdminSettingsSnapshot {
   const raw = (payload as Record<string, unknown>) ?? {}
   const members = normalizeMatchArray(raw.members ?? raw.teamMembers, ['members', 'teamMembers'], (value, index) => {
     const item = (value as Record<string, unknown>) ?? {}
+    const permissions = Array.isArray(item.permissions)
+      ? (item.permissions as unknown[]).map((permission) => String(permission))
+      : typeof item.permission === 'string'
+      ? [item.permission]
+      : []
+    const status = typeof item.status === 'string' ? item.status : (item.state as string | undefined)
+    const normalizedStatus = typeof status === 'string' ? status.toUpperCase() : undefined
     return {
-      id: ensureStringId(item.id ?? item.phoneNumber, `team-member-${index}`),
+      id: ensureStringId(item.id ?? item.email ?? item.phoneNumber, `team-member-${index}`),
+      email: typeof item.email === 'string' ? item.email : (item.username as string | undefined),
+      username: typeof item.username === 'string' ? item.username : undefined,
+      name: typeof item.name === 'string' ? item.name : (item.displayName as string | undefined),
       phoneNumber: typeof item.phoneNumber === 'string' ? item.phoneNumber : (item.phone as string | undefined),
       role: typeof item.role === 'string' ? item.role : (item.permission as string | undefined),
-      status: typeof item.status === 'string' ? item.status : (item.state as string | undefined),
+      status: normalizedStatus ?? undefined,
       twoFactor: Boolean(item.twoFactor ?? item.two_factor ?? item.mfa ?? false),
+      permissions,
+      lastLoginAt: typeof item.lastLoginAt === 'string' ? item.lastLoginAt : (item.last_login as string | undefined),
     }
   })
 
@@ -1399,13 +1456,34 @@ const EMPTY_ADMIN_SETTINGS: AdminSettingsSnapshot = {
   auditMemo: '',
 }
 
+function adaptAccountToTeamMember(account: AdminAccount): AdminTeamMember {
+  return {
+    id: account.id,
+    email: account.email,
+    username: account.username,
+    name: account.name,
+    role: account.role,
+    status: account.status,
+    twoFactor: account.twoFactorEnabled,
+    permissions: [...account.permissions],
+    lastLoginAt: account.lastLoginAt,
+  }
+}
+
 export async function getAdminSettingsSnapshot(params: Record<string, unknown> = {}) {
   try {
     const response = await api.get('/admin/settings/snapshot', { params })
     return normalizeAdminSettings(response.data)
   } catch (error) {
     if (isAxiosError(error)) {
-      return EMPTY_ADMIN_SETTINGS
+      ensureDefaultSuperAdminAccount()
+      const accounts = listAdminAccounts()
+      return {
+        members: accounts.map((account) => adaptAccountToTeamMember(account)),
+        featureFlags: [],
+        integrations: [],
+        auditMemo: getAuditMemoSnapshot(),
+      }
     }
     throw error
   }
@@ -1417,14 +1495,24 @@ export async function createAdminTeamMember(payload: Record<string, unknown>) {
     return normalizeAdminSettings({ members: [response.data] }).members[0]
   } catch (error) {
     if (isAxiosError(error)) {
-      const draft = {
-        id: ensureStringId(payload.id ?? payload.phoneNumber, 'team-member-local'),
-        phoneNumber: (payload.phoneNumber as string | undefined) ?? undefined,
-        role: (payload.role as string | undefined) ?? 'Tester',
-        status: (payload.status as string | undefined) ?? '활성',
-        twoFactor: Boolean(payload.twoFactor ?? false),
+      try {
+        const rawRole = typeof payload.role === 'string' ? payload.role.toUpperCase() : undefined
+        const rawStatus = typeof payload.status === 'string' ? payload.status.toUpperCase() : undefined
+        const created = createAdminAccount({
+          email: String(payload.email ?? payload.username ?? ''),
+          name: typeof payload.name === 'string' ? payload.name : String(payload.displayName ?? payload.email ?? ''),
+          role: (rawRole as any) ?? 'MANAGER',
+          status: (rawStatus as any) ?? 'ACTIVE',
+          password: String(payload.password ?? ''),
+          permissions: Array.isArray(payload.permissions)
+            ? (payload.permissions as unknown[]).map((value) => String(value))
+            : undefined,
+          twoFactorEnabled: Boolean(payload.twoFactor ?? payload.twoFactorEnabled ?? false),
+        })
+        return adaptAccountToTeamMember(created)
+      } catch (fallbackError) {
+        throw fallbackError
       }
-      return draft
     }
     throw error
   }
@@ -1436,13 +1524,17 @@ export async function updateAdminTeamMember(memberId: string, payload: Record<st
     return normalizeAdminSettings({ members: [response.data] }).members[0]
   } catch (error) {
     if (isAxiosError(error)) {
-      return {
-        id: memberId,
-        phoneNumber: typeof payload.phoneNumber === 'string' ? payload.phoneNumber : undefined,
-        role: typeof payload.role === 'string' ? payload.role : undefined,
-        status: typeof payload.status === 'string' ? payload.status : undefined,
-        twoFactor: typeof payload.twoFactor === 'boolean' ? payload.twoFactor : undefined,
-      }
+      const updated = updateAdminAccount(memberId, {
+        name: typeof payload.name === 'string' ? payload.name : undefined,
+        role: typeof payload.role === 'string' ? (payload.role as string).toUpperCase() as any : undefined,
+        status: typeof payload.status === 'string' ? (payload.status as string).toUpperCase() as any : undefined,
+        permissions: Array.isArray(payload.permissions)
+          ? (payload.permissions as unknown[]).map((value) => String(value))
+          : undefined,
+        twoFactorEnabled: typeof payload.twoFactor === 'boolean' ? payload.twoFactor : undefined,
+        email: typeof payload.email === 'string' ? payload.email : undefined,
+      })
+      return adaptAccountToTeamMember(updated)
     }
     throw error
   }
@@ -1452,11 +1544,27 @@ export async function deleteAdminTeamMember(memberId: string) {
   try {
     await api.delete(`/admin/settings/team/${memberId}`)
   } catch (error) {
-    if (!isAxiosError(error)) {
+    if (isAxiosError(error)) {
+      deleteAdminAccount(memberId)
+    } else {
       throw error
     }
   }
   return { success: true }
+}
+
+export async function updateAdminTeamMemberPassword(memberId: string, payload: { password: string }) {
+  try {
+    const response = await api.patch(`/admin/settings/team/${memberId}/password`, payload)
+    return normalizeAdminSettings({ members: [response.data] }).members[0]
+  } catch (error) {
+    if (isAxiosError(error)) {
+      updateAdminPassword(memberId, payload.password)
+      const account = listAdminAccounts().find((candidate) => candidate.id === memberId)
+      return account ? adaptAccountToTeamMember(account) : undefined
+    }
+    throw error
+  }
 }
 
 export async function updateAdminFeatureFlag(flagId: string, payload: Record<string, unknown>) {
@@ -1470,6 +1578,14 @@ export async function updateAdminIntegrationSetting(settingId: string, payload: 
 }
 
 export async function saveAdminAuditMemo(payload: { memo: string }) {
-  const response = await api.post('/admin/settings/audit-log', payload)
-  return (response.data as { memo?: string } | undefined)?.memo ?? payload.memo
+  try {
+    const response = await api.post('/admin/settings/audit-log', payload)
+    return (response.data as { memo?: string } | undefined)?.memo ?? payload.memo
+  } catch (error) {
+    if (isAxiosError(error)) {
+      saveAuditMemoSnapshot(payload.memo)
+      return payload.memo
+    }
+    throw error
+  }
 }
