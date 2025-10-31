@@ -20,12 +20,12 @@ const routeMap = {
     method: 'get',
     description: '로그인 화면의 상태 점검용 헬스체크.',
   },
-  'auth.login.phone': {
-    key: 'auth.login.phone',
-    required: '/auth/login/phone',
-    actual: '/auth/login/phone',
+  'auth.login.email': {
+    key: 'auth.login.email',
+    required: '/auth/login/email',
+    actual: '/auth/login/email',
     method: 'post',
-    description: '휴대폰 번호 + 비밀번호 기반 관리자 로그인. (백엔드가 미구현일 경우 fallback 필요)',
+    description: '이메일 아이디 + 비밀번호 기반 관리자 로그인. 백엔드 미구현 시 로컬 슈퍼 관리자 계정을 사용합니다.',
   },
   'dashboard.metrics': {
     key: 'dashboard.metrics',
