@@ -129,7 +129,8 @@ export function normalizeAdminUserSummaryList(payload: unknown): AdminUserSummar
   }) as AdminUserSummaryNormalized[]
 
   const page = Number((container.page as number | string | undefined) ?? 1)
-  const limit = Number((container.limit as number | string | undefined) ?? items.length || 20)
+  const rawLimit = (container.limit as number | string | undefined) ?? items.length
+  const limit = Number(rawLimit || 20)
   const total = Number((container.total as number | string | undefined) ?? items.length)
   const totalPages = Number((container.totalPages as number | string | undefined) ?? Math.ceil(total / Math.max(limit, 1)))
 
