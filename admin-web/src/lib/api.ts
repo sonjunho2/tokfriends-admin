@@ -21,14 +21,15 @@ const ENV_BASE_CANDIDATES = [
   process.env.VITE_API_URL,
 ].filter((value): value is string => Boolean(value && value.trim().length > 0))
 
-const FALLBACK_BASE = 'https://tok-friends-api.onrender.com'
-const RAW_BASE = (ENV_BASE_CANDIDATES[0] ?? FALLBACK_BASE).trim()
+const RAW_BASE = (ENV_BASE_CANDIDATES[0] ?? '').trim()
 const API_BASE_URL = RAW_BASE.replace(/\/+$/, '')
 
-if (typeof window !== 'undefined') {
+if (!RAW_BASE) {
   // eslint-disable-next-line no-console
-  const source = ENV_BASE_CANDIDATES[0] ? 'env' : 'fallback'
-  console.log('[TokFriends Admin] API_BASE_URL =', API_BASE_URL, `(${source})`)
+  console.warn('[TokFriends Admin] Missing NEXT_PUBLIC_API_BASE_URL. TODO: configure admin-web/.env before deploying.')
+} else if (typeof window !== 'undefined') {
+  // eslint-disable-next-line no-console
+  console.log('[TokFriends Admin] API_BASE_URL =', API_BASE_URL, '(env)')
 }
 
 export const api = axios.create({
