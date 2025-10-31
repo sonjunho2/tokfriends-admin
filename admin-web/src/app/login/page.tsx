@@ -7,7 +7,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/use-toast'
-import { checkHealth, loginWithPhone, saveLoginResult } from '@/lib/api'
+import { checkHealth, loginWithEmail, saveLoginResult } from '@/lib/api'
+import { AdminAuthError, ensureDefaultSuperAdminAccount } from '@/lib/admin-auth'
 import type { AxiosError } from 'axios'
 
 export default function LoginPage() {
@@ -48,23 +49,24 @@ export default function LoginPage() {
   }
 
   const handleLoginClick = async () => {
-    const phoneInput = document.getElementById('phone') as HTMLInputElement | null
+    const identifierInput = document.getElementById('identifier') as HTMLInputElement | null
     const passwordInput = document.getElementById('password') as HTMLInputElement | null
 
     const data = {
-      phoneNumber: phoneInput?.value?.trim() || '',
+      email: identifierInput?.value?.trim() || '',
       password: passwordInput?.value || '',
     }
 
-    if (!data.phoneNumber || !data.password) {
-      toast({ title: '입력 오류', description: '휴대폰 번호와 비밀번호를 입력해주세요.', variant: 'destructive' })
+    if (!data.email || !data.password) {
+      toast({ title: '입력 오류', description: '관리자 아이디(이메일)와 비밀번호를 입력해주세요.', variant: 'destructive' })
       return
     }
 
     setIsLoading(true)
     try {
-      // ✅ 백엔드가 실제로 사용하는 단일 엔드포인트
-      const result = await loginWithPhone(data)
+      ensureDefaultSuperAdminAccount()
+      // ✅ 이메일 기반 로그인 엔드포인트 (로컬 슈퍼 관리자 계정 fallback 포함)
+      const result = await loginWithEmail(data)
 
       if (result?.token || result?.access_token) {
         saveLoginResult(result)
@@ -76,6 +78,10 @@ export default function LoginPage() {
       // 응답은 200인데 토큰이 없을 때
       throw new Error('서버 응답에 토큰이 없습니다.')
     } catch (err) {
+      if (err instanceof AdminAuthError) {
+        toast({ title: '로그인 실패', description: err.message, variant: 'destructive' })
+        return
+      }
       logAxios('[Login Error]', err, 'error')
 
       const ax = err as AxiosError | undefined
@@ -83,7 +89,7 @@ export default function LoginPage() {
       const serverMsg = (ax?.response?.data as any)?.message
       const msg =
         status === 401
-          ? '휴대폰 번호 또는 비밀번호가 올바르지 않습니다.'
+          ? '아이디 또는 비밀번호가 올바르지 않습니다.'
           : Array.isArray(serverMsg)
           ? serverMsg.join(', ')
           : (serverMsg || ax?.message || '로그인에 실패했습니다.')
@@ -103,19 +109,24 @@ export default function LoginPage() {
             관리자 계정으로 로그인하세요
             {health === 'ok' && <span className="ml-2 text-green-600 text-xs">(서버 연결 OK)</span>}
             {health === 'bad' && <span className="ml-2 text-red-600 text-xs">(서버 연결 불안정)</span>}
+            <div className="mt-2 space-y-1 rounded-md bg-muted/40 p-2 text-xs leading-relaxed text-muted-foreground">
+              <p>
+                기본 슈퍼 관리자 계정: <strong>admin@example.com</strong> / <strong>Admin123!</strong>
+              </p>
+              <p>로그인 후 설정 &gt; 팀 관리에서 비밀번호를 변경하고 부관리자를 생성하세요.</p>
+            </div>
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={(e) => e.preventDefault()} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="phone">휴대폰 번호</Label>
+              <Label htmlFor="identifier">관리자 아이디 (이메일)</Label>
               <Input
-                id="phone"
-                type="tel"
-                inputMode="tel"
-                autoComplete="tel"
-                placeholder="010-1234-5678"
-                disabled={isLoading}
+                id="identifier"
+                type="email"
+                inputMode="email"
+                autoComplete="username"
+                placeholder="admin@example.com"
               />
             </div>
             <div className="space-y-2">
