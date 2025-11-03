@@ -84,6 +84,11 @@ function mapAccountsToMembers(accounts: ReturnType<typeof listAdminAccounts>): A
   }))
 }
 
+function getFallbackMembers(): AdminTeamMember[] {
+  ensureDefaultSuperAdminAccount()
+  return mapAccountsToMembers(listAdminAccounts())
+}
+
 function parsePermissionInput(input: string | string[]): string[] {
   if (Array.isArray(input)) {
     return input.map((value) => value.trim()).filter((value) => value.length > 0)
@@ -105,15 +110,10 @@ function formatDateTime(value?: string) {
 export default function SettingsPage() {
   const { toast } = useToast()
 
-    const defaultMembers = useMemo(() => {
-    ensureDefaultSuperAdminAccount()
-    return mapAccountsToMembers(listAdminAccounts())
-  }, [])
-
   const defaultPermissionText = PERMISSION_HINT
 
   const [isLoading, setIsLoading] = useState(false)
-  const [members, setMembers] = useState<AdminTeamMember[]>(defaultMembers)
+  const [members, setMembers] = useState<AdminTeamMember[]>(() => getFallbackMembers())
   const [flags, setFlags] = useState<AdminFeatureFlag[]>(FALLBACK_SETTINGS.featureFlags)
   const [integrations, setIntegrations] = useState<AdminIntegrationSetting[]>(FALLBACK_SETTINGS.integrations)
   const [auditLog, setAuditLog] = useState(FALLBACK_SETTINGS.auditMemo ?? '')
@@ -160,7 +160,7 @@ export default function SettingsPage() {
     statusOptions.find((status) => status.value === value)?.label ?? value ?? '상태 미정'
 
   const teamRoles = useMemo(
-        () => [
+    () => [
       { value: 'SUPER_ADMIN', label: '슈퍼 관리자' },
       { value: 'MANAGER', label: '운영 매니저' },
       { value: 'MODERATOR', label: '모더레이터' },
@@ -208,7 +208,11 @@ export default function SettingsPage() {
         })
       }
       const localMembers = mapAccountsToMembers(listAdminAccounts())
-      setMembers(localMembers.length > 0 ? localMembers : defaultMembers)
+      if (localMembers.length > 0) {
+        setMembers(localMembers)
+      } else {
+        setMembers(getFallbackMembers())
+      }
       toast({
         title: '로컬 예시 데이터 사용',
         description: 'API 연결 대신 저장된 관리자 계정 정보를 표시합니다.',
@@ -307,8 +311,9 @@ export default function SettingsPage() {
     setSavingMemberId(id)
     try {
       const updated = await updateAdminTeamMember(id, { twoFactor: enabled })
-      setMembers((prev) => prev.map((member) => (member.id === id ? { ...member, ...updated, twoFactor: enabled } : member)))      toast({
-       toast({
+      setMembers((prev) => prev.map((member) => (member.id === id ? { ...member, ...updated, twoFactor: enabled } : member)))
+
+      toast({
         title: '2단계 인증 업데이트',
         description: `${updated?.name ?? updated?.email ?? '운영자'}의 2FA 설정이 ${updated?.twoFactor ? '활성화' : '비활성화'}되었습니다.`,
       })
