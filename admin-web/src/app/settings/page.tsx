@@ -36,7 +36,7 @@ import { AdminAuthError, ensureDefaultSuperAdminAccount, listAdminAccounts } fro
 import type { AxiosError } from 'axios'
 
 const FALLBACK_SETTINGS: AdminSettingsSnapshot = {
-  members: [],  members: [],
+  members: [],
   featureFlags: [
     {
       id: 'flag-new-matching',
