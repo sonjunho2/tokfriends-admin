@@ -29,6 +29,7 @@ import {
 } from './normalize'
 
 const ENV_BASE_CANDIDATES = [
+  process.env.TOK_API_BASE_URL,
   process.env.NEXT_PUBLIC_API_URL,
   process.env.NEXT_PUBLIC_API_BASE_URL,
   process.env.REACT_APP_API_URL,
@@ -40,7 +41,7 @@ const API_BASE_URL = RAW_BASE.replace(/\/+$/, '')
 
 if (!RAW_BASE) {
   // eslint-disable-next-line no-console
-  console.warn('[TokFriends Admin] Missing NEXT_PUBLIC_API_BASE_URL. TODO: configure admin-web/.env before deploying.')
+  console.warn('[TokFriends Admin] Missing TOK_API_BASE_URL. TODO: configure admin-web/.env before deploying.')
 } else if (typeof window !== 'undefined') {
   // eslint-disable-next-line no-console
   console.log('[TokFriends Admin] API_BASE_URL =', API_BASE_URL, '(env)')
