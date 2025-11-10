@@ -981,7 +981,7 @@ export default function SettingsPage() {
       </section>
 
       <section className="space-y-4">
-                <Card>
+        <Card>
           <CardHeader>
             <CardTitle>관리자 인증번호</CardTitle>
             <p className="text-sm text-muted-foreground">
