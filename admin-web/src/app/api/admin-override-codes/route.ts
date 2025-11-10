@@ -1,9 +1,69 @@
 import { NextResponse } from 'next/server'
 import { promises as fs } from 'fs'
+import { existsSync, readFileSync } from 'fs'
 import path from 'path'
 
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+const PROJECT_PACKAGE_NAME = 'tokfriends-admin-web'
+
+function resolveProjectRoot(): string {
+  const seen = new Set<string>()
+  const candidateOrigins = [
+    process.env.ADMIN_ENV_ROOT,
+    process.cwd(),
+    path.join(process.cwd(), '..'),
+    path.join(process.cwd(), '../..'),
+    path.join(process.cwd(), '../../..'),
+  ].filter(Boolean) as string[]
+
+  const isProjectRoot = (dir: string) => {
+    if (seen.has(dir)) {
+      return false
+    }
+    seen.add(dir)
+
+    try {
+      const pkgPath = path.join(dir, 'package.json')
+      if (!existsSync(pkgPath)) {
+        return false
+      }
+
+      const pkgRaw = readFileSync(pkgPath, 'utf8')
+      const pkg = JSON.parse(pkgRaw) as { name?: string; dependencies?: Record<string, unknown> }
+      if (pkg?.name === PROJECT_PACKAGE_NAME) {
+        return true
+      }
+      if (pkg?.dependencies && 'next' in pkg.dependencies) {
+        return true
+      }
+    } catch {
+      return false
+    }
+
+    return false
+  }
+
+  for (const origin of candidateOrigins) {
+    let current = path.resolve(origin)
+    for (let depth = 0; depth < 6; depth += 1) {
+      if (isProjectRoot(current)) {
+        return current
+      }
+      const parent = path.dirname(current)
+      if (parent === current) {
+        break
+      }
+      current = parent
+    }
+  }
+
+  return path.resolve(process.cwd())
+}
+
 const ENV_KEY = 'EXPO_PUBLIC_ADMIN_OVERRIDE_CODES'
-const ENV_FILE_PATH = path.join(process.cwd(), '.env.local')
+const ENV_FILE_PATH = path.join(resolveProjectRoot(), '.env.local')
 
 function normalizeCodes(input: unknown): string[] {
   if (!input) {
@@ -59,6 +119,9 @@ async function readEnvFile(): Promise<string | null> {
 }
 
 function ensureTrailingNewline(content: string): string {
+  if (!content) {
+    return ''
+  }
   return content.endsWith('\n') ? content : `${content}\n`
 }
 
@@ -114,7 +177,15 @@ export async function PUT(request: Request) {
 
   const existing = await readEnvFile()
   const nextContent = buildUpdatedEnv(existing, codes)
-  await fs.writeFile(ENV_FILE_PATH, nextContent, 'utf8')
+
+  try {
+    await fs.mkdir(path.dirname(ENV_FILE_PATH), { recursive: true })
+    await fs.writeFile(ENV_FILE_PATH, nextContent, 'utf8')
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException
+    const description = err?.message || '관리자 인증번호를 저장하지 못했습니다.'
+    return NextResponse.json({ message: description }, { status: 500 })
+  }
 
   return NextResponse.json({ codes })
 }
