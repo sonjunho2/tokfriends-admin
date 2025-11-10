@@ -93,7 +93,15 @@ function extractCodesFromEnv(content: string | null): string[] {
     const fallback = process.env[ENV_KEY]
     return fallback ? normalizeCodes(fallback) : []
   }
-
+  // content가 없을 때(.env.local 파일이 없거나 키가 없는 경우)에는
+  // 환경변수를 우선 사용하되 값이 없으면 '123456'을 기본값으로 사용합니다.
+  if (!content) {
+    const fallbackEnv = process.env[ENV_KEY]
+    const fallback =
+      fallbackEnv && String(fallbackEnv).trim().length > 0 ? fallbackEnv : '123456'
+    return normalizeCodes(fallback)
+  }
+  
   const lines = content.split(/\r?\n/)
   for (const line of lines) {
     if (line.startsWith(`${ENV_KEY}=`)) {
