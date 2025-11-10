@@ -2,8 +2,5 @@
   "name": "tokfriends-admin-tools",
   "private": true,
   "version": "0.1.0",
-  "description": "Utility scripts for TokFriends admin maintenance.",
-  "scripts": {
-    "admin": "node scripts/admin/index.js"
-  }
+  "description": "Utility helpers for TokFriends admin maintenance."
 }
