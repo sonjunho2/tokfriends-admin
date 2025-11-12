@@ -3,6 +3,7 @@
 import { useMemo } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { LogOut, Search, Sparkles, ChevronRight } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,6 +15,8 @@ export interface AppShellNavItem {
   href: string
   description: string
   badge?: string
+  group?: string
+  icon?: LucideIcon
 }
 
 interface AppShellProps {
@@ -30,6 +33,17 @@ export function AppShell({ items, children }: AppShellProps) {
     const found = items.find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`))
     return found ?? items[0]
   }, [items, pathname])
+
+  const groupedItems = useMemo(() => {
+    const groups = new Map<string, AppShellNavItem[]>()
+    items.forEach((item) => {
+      const key = item.group ?? '기본 메뉴'
+      const next = groups.get(key) ?? []
+      next.push(item)
+      groups.set(key, next)
+    })
+    return Array.from(groups.entries())
+  }, [items])
 
   const handleLogout = () => {
     logoutToLogin()
@@ -61,37 +75,58 @@ export function AppShell({ items, children }: AppShellProps) {
             <p className="mt-1 text-[11px] text-muted-foreground">⌘K 로 전역 검색이 곧 제공될 예정입니다.</p>
           </div>
 
-          <nav className="flex-1 space-y-2">
-            {items.map((item) => {
-              const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
-              return (
-                <button
-                  key={item.href}
-                  type="button"
-                  onClick={() => router.push(item.href)}
-                  className={cn(
-                    'w-full rounded-lg border px-3 py-2 text-left transition',
-                    isActive
-                      ? 'border-primary/70 bg-primary/10 text-primary'
-                      : 'border-transparent hover:border-border hover:bg-muted/70'
-                  )}
-                  aria-current={isActive ? 'page' : undefined}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <p className="text-sm font-semibold leading-tight">{item.label}</p>
-                      <p className="text-xs text-muted-foreground">{item.description}</p>
-                    </div>
-                    {isActive && <ChevronRight className="h-4 w-4 text-primary" />}
-                  </div>
-                  {item.badge && (
-                    <span className="mt-2 inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-                      {item.badge}
-                    </span>
-                  )}
-                </button>
-              )
-            })}
+          <nav className="flex-1 space-y-4">
+            {groupedItems.map(([group, groupItems]) => (
+              <div key={group} className="space-y-2">
+                <p className="px-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{group}</p>
+                <div className="space-y-2">
+                  {groupItems.map((item) => {
+                    const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
+                    const Icon = item.icon
+                    return (
+                      <button
+                        key={item.href}
+                        type="button"
+                        onClick={() => router.push(item.href)}
+                        className={cn(
+                          'flex w-full items-start gap-3 rounded-lg border px-3 py-2 text-left transition',
+                          isActive
+                            ? 'border-primary/70 bg-primary/10 text-primary'
+                            : 'border-transparent hover:border-border hover:bg-muted/70'
+                        )}
+                        aria-current={isActive ? 'page' : undefined}
+                      >
+                        {Icon && (
+                          <span
+                            className={cn(
+                              'mt-0.5 inline-flex h-8 w-8 items-center justify-center rounded-md border text-sm',
+                              isActive ? 'border-primary/60 bg-primary/10 text-primary' : 'border-border bg-background'
+                            )}
+                            aria-hidden
+                          >
+                            <Icon className="h-4 w-4" />
+                          </span>
+                        )}
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <div>
+                              <p className="text-sm font-semibold leading-tight">{item.label}</p>
+                              <p className="text-xs text-muted-foreground">{item.description}</p>
+                            </div>
+                            {isActive && <ChevronRight className="h-4 w-4 text-primary" />}
+                          </div>
+                          {item.badge && (
+                            <span className="mt-2 inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                              {item.badge}
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
           </nav>
 
           <div className="mt-6 space-y-2 text-xs text-muted-foreground">
