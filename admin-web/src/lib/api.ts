@@ -40,8 +40,9 @@ const RAW_BASE = (ENV_BASE_CANDIDATES[0] ?? '').trim()
 const API_BASE_URL = RAW_BASE.replace(/\/+$/, '')
 
 if (!RAW_BASE) {
-  // eslint-disable-next-line no-console
-  console.warn('[TokFriends Admin] Missing TOK_API_BASE_URL. TODO: configure admin-web/.env before deploying.')
+  throw new Error(
+    '[TokFriends Admin] API_BASE_URL is undefined. Set NEXT_PUBLIC_API_BASE_URL in your .env file.'
+  )
 } else if (typeof window !== 'undefined') {
   // eslint-disable-next-line no-console
   console.log('[TokFriends Admin] API_BASE_URL =', API_BASE_URL, '(env)')
@@ -1589,4 +1590,40 @@ export async function saveAdminAuditMemo(payload: { memo: string }) {
     }
     throw error
   }
+}
+
+function normalizeAdminOverrideCodes(input: unknown): string[] {
+  if (!input) {
+    return []
+  }
+
+  if (Array.isArray(input)) {
+    return input.map((code) => String(code).trim()).filter((code) => code.length > 0)
+  }
+
+  if (typeof input === 'string') {
+    return input
+      .split(',')
+      .map((code) => code.trim())
+      .filter((code) => code.length > 0)
+  }
+
+  if (typeof input === 'object' && input) {
+    const candidate = (input as Record<string, unknown>).codes
+    return normalizeAdminOverrideCodes(candidate)
+  }
+
+  return []
+}
+
+export async function getAdminOverrideCodes() {
+  const route = buildRoutePath('admin.overrideCodes.list')
+  const response = await api.get(route)
+  return normalizeAdminOverrideCodes(response.data)
+}
+
+export async function updateAdminOverrideCodes(codes: string[]) {
+  const route = buildRoutePath('admin.overrideCodes.update')
+  const response = await api.put(route, { codes })
+  return normalizeAdminOverrideCodes(response.data)
 }
