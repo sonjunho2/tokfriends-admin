@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
+import { Flag, Grid3x3, PlugZap, ShieldCheck, Users, type LucideIcon } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -36,6 +37,7 @@ import {
 } from '@/lib/api'
 import { AdminAuthError, ensureDefaultSuperAdminAccount, listAdminAccounts } from '@/lib/admin-auth'
 import type { AxiosError } from 'axios'
+import { cn } from '@/lib/utils'
 
 const FALLBACK_SETTINGS: AdminSettingsSnapshot = {
   members: [],
@@ -71,6 +73,8 @@ const FALLBACK_SETTINGS: AdminSettingsSnapshot = {
 }
 
 const PERMISSION_HINT = 'users.manage, reports.view'
+
+type SettingsSection = 'overview' | 'team' | 'security' | 'product' | 'integrations'
 
 function mapAccountsToMembers(accounts: ReturnType<typeof listAdminAccounts>): AdminTeamMember[] {
   return accounts.map((account) => ({
@@ -131,6 +135,8 @@ export default function SettingsPage() {
   const [savingIntegrationId, setSavingIntegrationId] = useState<string | null>(null)
   const [savingAuditLog, setSavingAuditLog] = useState(false)
 
+  const [activeSection, setActiveSection] = useState<SettingsSection>('overview')
+
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [isPermissionDialogOpen, setIsPermissionDialogOpen] = useState(false)
   const [permissionDraft, setPermissionDraft] = useState('')
@@ -160,6 +166,118 @@ export default function SettingsPage() {
       permissions: defaultPermissionText,
       twoFactor: false,
     })
+  }
+
+  const sectionFilters = useMemo(
+    () =>
+      [
+        {
+          id: 'overview' as SettingsSection,
+          label: '전체 보기',
+          description: '모든 설정을 한 화면에서 살펴봅니다.',
+          icon: Grid3x3,
+        },
+        {
+          id: 'team' as SettingsSection,
+          label: '팀 & 권한',
+          description: '부관리자 계정과 역할, 권한을 관리합니다.',
+          icon: Users,
+        },
+        {
+          id: 'security' as SettingsSection,
+          label: '보안 & 감사',
+          description: '2단계 인증과 비상 인증번호를 점검합니다.',
+          icon: ShieldCheck,
+        },
+        {
+          id: 'product' as SettingsSection,
+          label: '기능 제어',
+          description: '실험과 단계적 롤아웃 상태를 조정합니다.',
+          icon: Flag,
+        },
+        {
+          id: 'integrations' as SettingsSection,
+          label: '외부 연동',
+          description: '푸시 · 모니터링 · AI 키를 관리합니다.',
+          icon: PlugZap,
+        },
+      ] satisfies { id: SettingsSection; label: string; description: string; icon: LucideIcon }[],
+    []
+  )
+
+  const activeMemberCount = useMemo(
+    () => members.filter((member) => (member.status ?? 'ACTIVE') !== 'SUSPENDED').length,
+    [members]
+  )
+  const suspendedMemberCount = useMemo(
+    () => members.filter((member) => member.status === 'SUSPENDED').length,
+    [members]
+  )
+  const twoFactorEnabledCount = useMemo(() => members.filter((member) => member.twoFactor).length, [members])
+  const enabledFlagCount = useMemo(() => flags.filter((flag) => flag.enabled).length, [flags])
+  const configuredIntegrationCount = useMemo(
+    () => integrations.filter((integration) => (integration.value ?? '').trim().length > 0).length,
+    [integrations]
+  )
+
+  const quickStats = useMemo(
+    () =>
+      [
+        {
+          id: 'team' as SettingsSection,
+          label: '활성 관리자',
+          value: `${activeMemberCount}명`,
+          helper: `일시중지 ${suspendedMemberCount}명`,
+          icon: Users,
+        },
+        {
+          id: 'security' as SettingsSection,
+          label: '보안 상태',
+          value: overrideCodes.length > 0 ? `인증번호 ${overrideCodes.length}개` : '인증번호 미설정',
+          helper: `2FA 적용 ${twoFactorEnabledCount}명`,
+          icon: ShieldCheck,
+        },
+        {
+          id: 'product' as SettingsSection,
+          label: '활성 플래그',
+          value: `${enabledFlagCount}/${flags.length}`,
+          helper: '실험 · 베타 기능',
+          icon: Flag,
+        },
+        {
+          id: 'integrations' as SettingsSection,
+          label: '연동 완료',
+          value: `${configuredIntegrationCount}/${integrations.length}`,
+          helper: '푸시 · 모니터링 키',
+          icon: PlugZap,
+        },
+      ] satisfies {
+        id: SettingsSection
+        label: string
+        value: string
+        helper: string
+        icon: LucideIcon
+      }[],
+    [
+      activeMemberCount,
+      configuredIntegrationCount,
+      enabledFlagCount,
+      flags.length,
+      integrations.length,
+      overrideCodes.length,
+      suspendedMemberCount,
+      twoFactorEnabledCount,
+    ]
+  )
+
+  const isSectionVisible = (section: SettingsSection) => activeSection === 'overview' || activeSection === section
+
+  const focusSection = (section: SettingsSection) => {
+    setActiveSection(section)
+    if (typeof window !== 'undefined') {
+      const element = document.getElementById(`settings-${section}`)
+      element?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
   }
 
   const resolveRoleLabel = (value?: string) => teamRoles.find((role) => role.value === value)?.label ?? value ?? '역할 미정'
@@ -596,9 +714,87 @@ export default function SettingsPage() {
     }
   }
 
+
   return (
-    <div className="grid gap-6 xl:grid-cols-[2fr_3fr]">
-      <section className="space-y-4">
+    <div className="space-y-6">
+    <section id="settings-overview">
+      <Card className="border-primary/40 bg-primary/5">
+        <CardHeader className="space-y-2">
+          <CardTitle>설정 센터</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            팀 운영부터 보안, 실험 설정까지 필요한 항목을 빠르게 찾아 수정할 수 있습니다.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {quickStats.map((stat) => {
+              const StatIcon = stat.icon
+              return (
+                <button
+                  key={stat.id}
+                  type="button"
+                  onClick={() => focusSection(stat.id)}
+                  className={cn(
+                    'group flex w-full items-center justify-between gap-3 rounded-lg border bg-background/70 px-4 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60',
+                    activeSection === stat.id
+                      ? 'border-primary bg-primary/10'
+                      : 'border-border hover:border-primary/40 hover:bg-primary/5'
+                  )}
+                  aria-pressed={activeSection === stat.id}
+                >
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{stat.label}</p>
+                    <p className="text-lg font-semibold text-foreground">{stat.value}</p>
+                    <p className="text-[11px] text-muted-foreground">{stat.helper}</p>
+                  </div>
+                  <span
+                    className={cn(
+                      'inline-flex h-10 w-10 items-center justify-center rounded-md border text-sm transition',
+                      activeSection === stat.id
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border bg-background text-muted-foreground'
+                    )}
+                    aria-hidden
+                  >
+                    <StatIcon className="h-5 w-5" />
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="grid gap-2 md:grid-cols-5">
+            {sectionFilters.map((section) => {
+              const FilterIcon = section.icon
+              const isActive = activeSection === section.id
+              return (
+                <button
+                  key={section.id}
+                  type="button"
+                  onClick={() => focusSection(section.id)}
+                  className={cn(
+                    'flex flex-col items-start gap-1 rounded-lg border px-3 py-3 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60',
+                    isActive
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border hover:border-primary/40 hover:bg-muted/60'
+                  )}
+                  aria-pressed={isActive}
+                >
+                  <div className="flex items-center gap-2 text-sm font-semibold">
+                    <FilterIcon className="h-4 w-4" />
+                    {section.label}
+                  </div>
+                  <p className="text-xs text-muted-foreground">{section.description}</p>
+                </button>
+              )
+            })}
+          </div>
+        </CardContent>
+      </Card>
+    </section>
+
+    {isSectionVisible('team') && (
+      <section id="settings-team" className="space-y-4">
         <Card>
           <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -754,10 +950,10 @@ export default function SettingsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                {members.length === 0 && (
+                  {members.length === 0 && (
                     <tr>
                       <td className="px-3 py-6 text-center text-xs text-muted-foreground" colSpan={7}>
-                        아직 등록된 관리자가 없습니다. &quot;새 부관리자 추가&quot; 버튼으로 첫 계정을 생성하세요.
+                        아직 등록된 관리자가 없습니다. "새 부관리자 추가" 버튼으로 첫 계정을 생성하세요.
                       </td>
                     </tr>
                   )}
@@ -937,7 +1133,11 @@ export default function SettingsPage() {
             </Dialog>
           </CardContent>
         </Card>
+      </section>
+    )}
 
+      {isSectionVisible('security') && (
+      <section id="settings-security" className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle>감사 로그 메모</CardTitle>
@@ -966,9 +1166,7 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
-      </section>
 
-      <section className="space-y-4">
         <Card>
           <CardHeader>
             <CardTitle>관리자 인증번호</CardTitle>
@@ -1033,7 +1231,11 @@ export default function SettingsPage() {
             </p>
           </CardContent>
         </Card>
+      </section>
+    )}
 
+    {isSectionVisible('product') && (
+      <section id="settings-product" className="space-y-4">
         <Card>
           <CardHeader>
             <CardTitle>기능 플래그</CardTitle>
@@ -1061,7 +1263,11 @@ export default function SettingsPage() {
             {flags.length === 0 && <p className="text-muted-foreground">등록된 기능 플래그가 없습니다.</p>}
           </CardContent>
         </Card>
+      </section>
+    )}
 
+    {isSectionVisible('integrations') && (
+      <section id="settings-integrations" className="space-y-4">
         <Card>
           <CardHeader>
             <CardTitle>외부 서비스 연동</CardTitle>
@@ -1092,6 +1298,8 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
       </section>
+    )}
     </div>
   )
+
 }
