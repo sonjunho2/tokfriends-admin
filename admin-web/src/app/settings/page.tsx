@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
-import { Flag, Grid3x3, PlugZap, ShieldCheck, Users, type LucideIcon } from 'lucide-react'
+import { Flag, LayoutGrid, PlugZap, ShieldCheck, Users, type LucideIcon } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -175,7 +175,7 @@ export default function SettingsPage() {
           id: 'overview' as SettingsSection,
           label: '전체 보기',
           description: '모든 설정을 한 화면에서 살펴봅니다.',
-          icon: Grid3x3,
+          icon: LayoutGrid,
         },
         {
           id: 'team' as SettingsSection,
