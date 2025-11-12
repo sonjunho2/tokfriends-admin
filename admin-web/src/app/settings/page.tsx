@@ -27,6 +27,8 @@ import {
   updateAdminIntegrationSetting,
   updateAdminTeamMember,
   updateAdminTeamMemberPassword,
+  getAdminOverrideCodes,
+  updateAdminOverrideCodes,
   type AdminFeatureFlag,
   type AdminIntegrationSetting,
   type AdminSettingsSnapshot,
@@ -246,18 +248,13 @@ export default function SettingsPage() {
   async function loadOverrideCodes() {
     setLoadingOverrideCodes(true)
     try {
-      const response = await fetch('/api/admin-override-codes')
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => ({}))) as { message?: string }
-        throw new Error(payload?.message || '인증번호 정보를 불러오지 못했습니다.')
-      }
-      const payload = (await response.json()) as { codes?: string[] }
-      const codes = Array.isArray(payload?.codes) ? payload.codes.map((code) => String(code)) : []
+      const codes = await getAdminOverrideCodes()
       setOverrideCodes(codes)
       setInitialOverrideCodes(codes)
       setOverrideCodesInput(formatOverrideCodesInput(codes))
     } catch (error) {
-      const message = error instanceof Error ? error.message : '인증번호 정보를 불러오지 못했습니다.'
+      const ax = error as AxiosError<{ message?: string }>
+      const message = ax?.response?.data?.message || ax?.message || '인증번호 정보를 불러오지 못했습니다.'
       toast({ title: '관리자 인증번호 조회 실패', description: message, variant: 'destructive' })
     } finally {
       setLoadingOverrideCodes(false)
@@ -288,17 +285,7 @@ export default function SettingsPage() {
 
     setSavingOverrideCodes(true)
     try {
-      const response = await fetch('/api/admin-override-codes', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ codes }),
-      })
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => ({}))) as { message?: string }
-        throw new Error(payload?.message || '관리자 인증번호를 저장하지 못했습니다.')
-      }
-      const payload = (await response.json()) as { codes?: string[] }
-      const saved = Array.isArray(payload?.codes) ? payload.codes.map((code) => String(code)) : []
+      const saved = await updateAdminOverrideCodes(codes)
       setOverrideCodes(saved)
       setInitialOverrideCodes(saved)
       setOverrideCodesInput(formatOverrideCodesInput(saved))
@@ -310,7 +297,8 @@ export default function SettingsPage() {
             : '인증번호를 모두 삭제했습니다. 필요 시 새 인증번호를 추가하세요.',
       })
     } catch (error) {
-      const message = error instanceof Error ? error.message : '관리자 인증번호를 저장하지 못했습니다.'
+      const ax = error as AxiosError<{ message?: string }>
+      const message = ax?.response?.data?.message || ax?.message || '관리자 인증번호를 저장하지 못했습니다.'
       toast({ title: '관리자 인증번호 저장 실패', description: message, variant: 'destructive' })
     } finally {
       setSavingOverrideCodes(false)
