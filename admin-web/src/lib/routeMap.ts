@@ -12,7 +12,11 @@ type RouteDefinition = {
   description?: string
 }
 
-const routeMap = {
+function defineRouteMap<const T extends Record<string, RouteDefinition>>(map: T) {
+  return map
+}
+
+const routeMap = defineRouteMap({
   'auth.health': {
     key: 'auth.health',
     required: '/health',
@@ -90,7 +94,7 @@ const routeMap = {
     method: 'put',
     description: '관리자 비상 인증번호 저장.',
   },
-} as const satisfies Record<string, RouteDefinition>
+} as const)
 
 export type RouteKey = keyof typeof routeMap
 export type RouteEntry = (typeof routeMap)[RouteKey]
