@@ -38,6 +38,12 @@ const ENV_BASE_CANDIDATES = [
 
 const RAW_BASE = (ENV_BASE_CANDIDATES[0] ?? '').trim()
 const API_BASE_URL = RAW_BASE.replace(/\/+$/, '')
+const API_ORIGIN =
+  API_BASE_URL && /^https?:\/\//i.test(API_BASE_URL)
+    ? new URL(API_BASE_URL).origin
+    : ''
+const SHOULD_SEND_CREDENTIALS =
+  typeof window !== 'undefined' && API_ORIGIN ? API_ORIGIN === window.location.origin : false
 
 if (!RAW_BASE) {
   throw new Error(
@@ -50,7 +56,7 @@ if (!RAW_BASE) {
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
-  withCredentials: true,
+  withCredentials: SHOULD_SEND_CREDENTIALS,
   timeout: 8000,
 })
 
