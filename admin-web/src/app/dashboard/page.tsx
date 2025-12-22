@@ -1,143 +1,192 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  Bar,
+  BarChart,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { useToast } from '@/components/ui/use-toast'
+import { getDashboardMetrics } from '@/lib/api'
+import type { AxiosError } from 'axios'
 
-const METRIC_SECTIONS = [
-  {
-    title: '사용자 운영',
-    description:
-      '활성 사용자 풀, 신규 가입, 제재/해제 현황을 통해 고객 지원 대기열을 예측합니다.',
-    metrics: [
-      { label: '24시간 활성', value: '48,230명', hint: '로그인 + 위치 업데이트 기준' },
-      { label: '신규 가입', value: '+1,284', hint: '전일 대비 증감 +6.2%' },
-      { label: '제재 중 계정', value: '312', hint: '자동 정책 58, 운영자 수동 254' },
-    ],
-  },
-  {
-    title: '매칭 & 탐색',
-    description: '대기열 지연, AI 추천 품질, 위치 히트맵을 점검합니다.',
-    metrics: [
-      { label: '평균 매칭 대기', value: '42초', hint: '서울/경기 주요 클러스터 기준' },
-      { label: 'AI 추천 적중률', value: '74%', hint: '1시간 내 채팅 시작 비율' },
-      { label: '플레이스 홀더 지역', value: '3곳', hint: '데이터 수집 필요 지역' },
-    ],
-  },
-  {
-    title: '채팅 & 안전',
-    description: '실시간 방, 신고 처리 SLA, 정책 자동화를 추적합니다.',
-    metrics: [
-      { label: '활성 채팅방', value: '612', hint: '현재 열려있는 1:1 대화' },
-      { label: '미처리 신고', value: '37건', hint: '24시간 SLA 92% 달성' },
-      { label: '자동 제재 성공률', value: '88%', hint: '키워드/반복 위반 탐지' },
-    ],
-  },
-  {
-    title: '콘텐츠 & 참여',
-    description: '캠페인, 공지, FAQ 운영 지표를 살펴봅니다.',
-    metrics: [
-      { label: '발송 중 캠페인', value: '5건', hint: '세그먼트 타겟팅 포함' },
-      { label: '공지 노출', value: '11개', hint: '홈/마이페이지 활성 상태' },
-      { label: 'FAQ 해결률', value: '93%', hint: '최근 7일 문의 대비' },
-    ],
-  },
-  {
-    title: '분석 & 리포트',
-    description: '핵심 KPI, 코호트, ARPPU/Retention 추이를 모니터링합니다.',
-    metrics: [
-      { label: 'DAU/MAU', value: '32%', hint: '전월 대비 +2.4pt' },
-      { label: '7일 잔존', value: '41%', hint: '신규 cohort 2024-03-08' },
-      { label: '지원 SLA', value: '18분', hint: '중앙 응답 소요 시간' },
-    ],
-  },
-  {
-    title: '설정 & 인프라',
-    description: '관리자 권한, 기능 플래그, API 상태를 추적합니다.',
-    metrics: [
-      { label: '활성 운영자', value: '28명', hint: 'SSO + 2FA 적용' },
-      { label: '플래그 변경', value: '3건', hint: '오늘 배포 대비 롤백 없음' },
-      { label: 'API 오류율', value: '0.42%', hint: 'admin 네임스페이스 기준' },
-    ],
-  },
+const FALLBACK_KPIS = [
+  { label: '가입자 수', value: '128,420명', hint: '전월 대비 +3.2%' },
+  { label: '매칭 요청 수', value: '24,980건', hint: '전일 대비 +4.1%' },
+  { label: '신고 건수', value: '312건', hint: '24시간 내 처리율 92%' },
 ] as const
 
-const ACTION_ITEMS = [
-  {
-    title: '사용자 케이스 조사',
-    body: '프로필 제재, 환불, VIP 태깅 등 사용자 케이스를 빠르게 확인하고 대응하세요.',
-    link: { href: '/users', label: '사용자 모듈 열기' },
-  },
-  {
-    title: '매칭 전략 튜닝',
-    body: '대기열 병목, 추천 가중치, 위치 기반 히트맵을 점검하여 매칭 효율을 높입니다.',
-    link: { href: '/matches', label: '매칭 & 탐색으로 이동' },
-  },
-  {
-    title: '채팅 & 안전 모니터링',
-    body: '실시간 신고 큐, 메시지 로그, 자동 제재 규칙을 검토해 안전 이슈를 예방하세요.',
-    link: { href: '/chats', label: '채팅 & 안전 열기' },
-  },
-  {
-    title: '캠페인 운영',
-    body: '공지/푸시 캠페인을 작성하고 성과 지표를 추적합니다. A/B 테스트도 지원 예정입니다.',
-    link: { href: '/content', label: '콘텐츠 & 참여로 이동' },
-  },
-  {
-    title: '지표 분석 & 익스포트',
-    body: '코호트 차트, 매칭 퍼널, 지원 SLA를 확인하고 CSV/BigQuery로 내보내세요.',
-    link: { href: '/analytics', label: '분석 & 리포트 보기' },
-  },
-  {
-    title: '플랫폼 설정',
-    body: '팀 권한, 기능 플래그, 외부 통합 키를 관리하고 배포 이력을 추적합니다.',
-    link: { href: '/settings', label: '설정으로 이동' },
-  },
-] as const
+const MONTHLY_SIGNUPS = [
+  { month: '1월', value: 8200 },
+  { month: '2월', value: 9100 },
+  { month: '3월', value: 11200 },
+  { month: '4월', value: 12800 },
+  { month: '5월', value: 14900 },
+  { month: '6월', value: 16100 },
+]
+
+const MATCH_COMPLETIONS = [
+  { week: '1주', value: 1820 },
+  { week: '2주', value: 2040 },
+  { week: '3주', value: 2210 },
+  { week: '4주', value: 2430 },
+]
+
+const REPORT_STATUS = [
+  { name: '처리 완료', value: 68 },
+  { name: '검토 중', value: 22 },
+  { name: '대기', value: 10 },
+]
 
 export default function DashboardPage() {
-  const totalCards = useMemo(() => METRIC_SECTIONS.length, [])
+  const { toast } = useToast()
+  const [kpis, setKpis] = useState(FALLBACK_KPIS)
+
+  useEffect(() => {
+    async function loadMetrics() {
+      try {
+        const metrics = await getDashboardMetrics()
+        if (metrics) {
+          setKpis([
+            {
+              label: '가입자 수',
+              value: metrics.totalUsers ? `${metrics.totalUsers.toLocaleString()}명` : FALLBACK_KPIS[0].value,
+              hint: metrics.userGrowth ? `전월 대비 ${metrics.userGrowth}` : FALLBACK_KPIS[0].hint,
+            },
+            {
+              label: '매칭 요청 수',
+              value: metrics.matchRequests
+                ? `${metrics.matchRequests.toLocaleString()}건`
+                : FALLBACK_KPIS[1].value,
+              hint: metrics.matchGrowth ? `전일 대비 ${metrics.matchGrowth}` : FALLBACK_KPIS[1].hint,
+            },
+            {
+              label: '신고 건수',
+              value: metrics.reports ? `${metrics.reports.toLocaleString()}건` : FALLBACK_KPIS[2].value,
+              hint: metrics.reportSla ? `24시간 내 처리율 ${metrics.reportSla}` : FALLBACK_KPIS[2].hint,
+            },
+          ])
+        }
+      } catch (error) {
+        const ax = error as AxiosError | undefined
+        const status = ax?.response?.status
+        const fallbackMessage = '데이터를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'
+        const message =
+          status && [404, 500].includes(status)
+            ? fallbackMessage
+            : ((ax?.response?.data as any)?.message || ax?.message || fallbackMessage)
+        toast({
+          title: '대시보드 지표 불러오기 실패',
+          description: Array.isArray(message) ? message.join(', ') : String(message),
+          variant: 'destructive',
+        })
+        setKpis(FALLBACK_KPIS)
+      }
+    }
+
+    void loadMetrics()
+  }, [toast])
+
+  const summaryTitle = useMemo(() => kpis.map((kpi) => kpi.label).join(', '), [kpis])
 
   return (
     <div className="space-y-8">
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {METRIC_SECTIONS.map((section) => (
-          <Card key={section.title} className="flex flex-col">
+      <section className="grid gap-4 md:grid-cols-3">
+        {kpis.map((metric) => (
+          <Card key={metric.label} className="border-muted">
             <CardHeader>
-              <CardTitle>{section.title}</CardTitle>
-              <p className="text-sm text-muted-foreground leading-relaxed">{section.description}</p>
+              <CardTitle className="text-base">{metric.label}</CardTitle>
             </CardHeader>
-            <CardContent className="mt-auto grid gap-2">
-              {section.metrics.map((metric) => (
-                <div key={metric.label} className="rounded-lg border p-3">
-                  <div className="flex items-center justify-between text-sm font-medium">
-                    <span>{metric.label}</span>
-                    <span className="text-lg font-semibold">{metric.value}</span>
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">{metric.hint}</p>
-                </div>
-              ))}
+            <CardContent>
+              <p className="text-2xl font-semibold text-primary">{metric.value}</p>
+              <p className="mt-2 text-sm text-muted-foreground">{metric.hint}</p>
             </CardContent>
           </Card>
         ))}
       </section>
 
+      <section className="grid gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle>월간 가입자 추세</CardTitle>
+            <p className="text-sm text-muted-foreground">최근 6개월 가입자 수 증감 추이를 확인합니다.</p>
+          </CardHeader>
+          <CardContent className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={MONTHLY_SIGNUPS} margin={{ left: 8, right: 8, top: 10 }}>
+                <XAxis dataKey="month" tickLine={false} axisLine={false} />
+                <YAxis tickLine={false} axisLine={false} width={40} />
+                <Tooltip formatter={(value: number) => `${value.toLocaleString()}명`} />
+                <Line type="monotone" dataKey="value" stroke="#1d4ed8" strokeWidth={3} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>신고 처리 상태</CardTitle>
+            <p className="text-sm text-muted-foreground">24시간 내 신고 처리 현황을 비율로 보여줍니다.</p>
+          </CardHeader>
+          <CardContent className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Tooltip formatter={(value: number) => `${value}%`} />
+                <Pie
+                  data={REPORT_STATUS}
+                  dataKey="value"
+                  nameKey="name"
+                  innerRadius={40}
+                  outerRadius={70}
+                  paddingAngle={4}
+                  fill="#334155"
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </section>
+
       <section>
         <Card>
           <CardHeader>
-            <CardTitle>주요 업무 바로가기</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              사용자, 매칭, 채팅, 콘텐츠, 분석, 설정 등 {totalCards}개 모듈의 핵심 화면으로 바로 이동합니다.
-            </p>
+            <CardTitle>매칭 완료 추세</CardTitle>
+            <p className="text-sm text-muted-foreground">주간 매칭 완료 건수를 비교합니다.</p>
           </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {ACTION_ITEMS.map((item) => (
-              <div key={item.title} className="rounded-lg border p-4">
-                <h3 className="text-base font-semibold">{item.title}</h3>
-                <p className="mt-2 text-sm text-muted-foreground leading-relaxed">{item.body}</p>
-                <a className="mt-4 inline-flex text-sm font-medium text-primary hover:underline" href={item.link.href}>
-                  {item.link.label}
-                </a>
+          <CardContent className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={MATCH_COMPLETIONS} margin={{ left: 8, right: 8, top: 10 }}>
+                <XAxis dataKey="week" tickLine={false} axisLine={false} />
+                <YAxis tickLine={false} axisLine={false} width={40} />
+                <Tooltip formatter={(value: number) => `${value.toLocaleString()}건`} />
+                <Bar dataKey="value" fill="#0f172a" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </section>
+
+      <section>
+        <Card>
+          <CardHeader>
+            <CardTitle>핵심 KPI 요약</CardTitle>
+            <p className="text-sm text-muted-foreground">{summaryTitle}를 중심으로 대시보드를 구성했습니다.</p>
+          </CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-3">
+            {kpis.map((metric) => (
+              <div key={metric.label} className="rounded-lg border p-4">
+                <h3 className="text-sm font-semibold">{metric.label}</h3>
+                <p className="mt-2 text-lg font-semibold text-primary">{metric.value}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{metric.hint}</p>
               </div>
             ))}
           </CardContent>
