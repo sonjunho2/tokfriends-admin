@@ -183,7 +183,7 @@ export default function UserDetailPage() {
                 </Button>
               </div>
               <p className="mt-2 text-xs text-muted-foreground">
-                활성화/비활성화 및 정지 상태를 변경하면 `PUT /users/{{id}}/status`로 요청됩니다.
+                활성화/비활성화 및 정지 상태를 변경하면 `PUT /users/{'{id}'}/status`로 요청됩니다.
               </p>
             </div>
           </CardContent>
