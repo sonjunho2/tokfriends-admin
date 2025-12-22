@@ -1,6 +1,7 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { LogOut, Search, Sparkles, ChevronRight } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -27,6 +28,7 @@ interface AppShellProps {
 export function AppShell({ items, children }: AppShellProps) {
   const router = useRouter()
   const pathname = usePathname()
+  const [adminName, setAdminName] = useState('관리자')
 
   const activeItem = useMemo(() => {
     if (!pathname) return items[0]
@@ -44,6 +46,19 @@ export function AppShell({ items, children }: AppShellProps) {
     })
     return Array.from(groups.entries())
   }, [items])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const stored = window.localStorage.getItem('user')
+      if (stored) {
+        const parsed = JSON.parse(stored) as { name?: string; email?: string }
+        setAdminName(parsed?.name || parsed?.email || '관리자')
+      }
+    } catch {
+      setAdminName('관리자')
+    }
+  }, [])
 
   const handleLogout = () => {
     logoutToLogin()
@@ -84,10 +99,9 @@ export function AppShell({ items, children }: AppShellProps) {
                     const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
                     const Icon = item.icon
                     return (
-                      <button
+                      <Link
                         key={item.href}
-                        type="button"
-                        onClick={() => router.push(item.href)}
+                        href={item.href}
                         className={cn(
                           'flex w-full items-start gap-3 rounded-lg border px-3 py-2 text-left transition',
                           isActive
@@ -121,7 +135,7 @@ export function AppShell({ items, children }: AppShellProps) {
                             </span>
                           )}
                         </div>
-                      </button>
+                      </Link>
                     )
                   })}
                 </div>
@@ -143,20 +157,29 @@ export function AppShell({ items, children }: AppShellProps) {
 
         <div className="flex flex-1 flex-col">
           <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur">
-            <div className="flex h-14 items-center justify-between gap-4 px-4">
-              <div className="min-w-0">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">현재 모듈</p>
-                <div className="flex items-center gap-2">
-                  <h2 className="truncate text-base font-semibold">{activeItem?.label ?? '대시보드'}</h2>
-                  {activeItem?.badge && (
-                    <span className="inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-                      {activeItem.badge}
-                    </span>
-                  )}
+            <div className="flex flex-wrap items-center justify-between gap-4 px-4 py-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-sm font-semibold text-primary-foreground">
+                  TF
                 </div>
-                <p className="truncate text-xs text-muted-foreground">{activeItem?.description}</p>
+                <div className="min-w-0">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">TokFriends Admin</p>
+                  <div className="flex items-center gap-2">
+                    <h2 className="truncate text-base font-semibold">{activeItem?.label ?? '대시보드'}</h2>
+                    {activeItem?.badge && (
+                      <span className="inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                        {activeItem.badge}
+                      </span>
+                    )}
+                  </div>
+                  <p className="truncate text-xs text-muted-foreground">{activeItem?.description}</p>
+                </div>
               </div>
-              <div className="flex flex-wrap items-center justify-end gap-2">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="hidden items-center gap-2 rounded-full border bg-background px-3 py-1 text-xs text-muted-foreground md:flex">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                  <span className="font-medium text-foreground">{adminName}</span>
+                </div>
                 <Button
                   variant="ghost"
                   size="sm"
