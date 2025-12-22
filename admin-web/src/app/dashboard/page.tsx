@@ -19,11 +19,17 @@ import { useToast } from '@/components/ui/use-toast'
 import { getDashboardMetrics } from '@/lib/api'
 import type { AxiosError } from 'axios'
 
-const FALLBACK_KPIS = [
+type KpiMetric = {
+  label: string
+  value: string
+  hint: string
+}
+
+const FALLBACK_KPIS: KpiMetric[] = [
   { label: '가입자 수', value: '128,420명', hint: '전월 대비 +3.2%' },
   { label: '매칭 요청 수', value: '24,980건', hint: '전일 대비 +4.1%' },
   { label: '신고 건수', value: '312건', hint: '24시간 내 처리율 92%' },
-] as const
+]
 
 const MONTHLY_SIGNUPS = [
   { month: '1월', value: 8200 },
