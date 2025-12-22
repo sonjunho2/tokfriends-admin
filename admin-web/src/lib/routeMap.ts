@@ -66,6 +66,13 @@ const routeMap = defineRouteMap({
     method: 'patch',
     description: '관리자 권한으로 사용자 프로필/상태 수정.',
   },
+  'users.status': {
+    key: 'users.status',
+    required: '/users/{userId}/status',
+    actual: '/users/:userId/status',
+    method: 'put',
+    description: '사용자 상태 변경 전용 엔드포인트.',
+  },
   'community.report': {
     key: 'community.report',
     required: '/community/report',
