@@ -341,6 +341,13 @@ export async function updateUserProfile(userId: string, payload: UserUpdatePaylo
   return normalized as UserDetail
 }
 
+export async function updateUserStatus(userId: string, status: string) {
+  const route = buildRoutePath('users.status', { userId })
+  const response = await api.put(route, { status })
+  const normalized = normalizeAdminUserDetail(response.data, userId)
+  return normalized as UserDetail
+}
+
 // ---------------------------------------------------------------------------
 // 신고 / 차단
 // ---------------------------------------------------------------------------
