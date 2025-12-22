@@ -2,5 +2,11 @@
   "name": "tokfriends-admin-tools",
   "private": true,
   "version": "0.1.0",
-  "description": "Utility helpers for TokFriends admin maintenance."
+  "description": "Utility helpers for TokFriends admin maintenance.",
+  "scripts": {
+    "dev": "npm --prefix admin-web run dev",
+    "build": "npm --prefix admin-web run build",
+    "start": "npm --prefix admin-web run start",
+    "lint": "npm --prefix admin-web run lint"
+  }
 }
