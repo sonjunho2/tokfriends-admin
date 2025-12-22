@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
+import { Noto_Sans_KR } from 'next/font/google'
 
 import { AppShell, type AppShellNavItem } from '@/components/layout/app-shell'
 import { ThemeProvider } from '@/components/providers/theme-provider'
@@ -20,6 +21,12 @@ import {
   Settings2,
   Store,
 } from 'lucide-react'
+
+const notoSansKr = Noto_Sans_KR({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  display: 'swap',
+})
 
 const PUBLIC_PATHS = ['/login']
 
@@ -108,7 +115,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   if (isAuthenticated === null) {
     return (
       <html lang="ko" suppressHydrationWarning>
-        <body className="font-sans">
+        <body className={notoSansKr.className}>
           <div className="flex min-h-screen items-center justify-center">
             <div className="text-sm text-muted-foreground">콘솔을 준비하고 있습니다…</div>
           </div>
@@ -122,7 +129,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <html lang="ko" suppressHydrationWarning>
-      <body className="font-sans">
+      <body className={notoSansKr.className}>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           {isPublicPage ? children : <AppShell items={NAV_ITEMS}>{children}</AppShell>}
           <Toaster />
